@@ -156,7 +156,7 @@ pub mod kernel;
 #[cfg(doctest)]
 #[doc(hidden)]
 mod test_readme {
-    #![doc = include_str!("../../README.md")]
+    #![doc = include_str!("../README.md")]
 }
 
 
