@@ -271,6 +271,18 @@ pub use self::{
     },
 };
 
+// Re-export the new `wolfram-expr` portable value types under aliases that don't
+// shadow the existing wll types. Users wanting the WXF-portable forms can reach
+// them from this crate's namespace without an extra `use wolfram_expr` line.
+pub use wolfram_expr::{
+    Association, ByteArray, NumericArrayDataType as ExprNumericArrayDataType,
+    NumericArrayElement, NumericArrayRead, PackedArray, PackedArrayDataType,
+    PackedArrayElement,
+};
+pub use wolfram_expr::NumericArray as OwnedNumericArray;
+#[cfg(feature = "bignum")]
+pub use wolfram_expr::{BigInteger, BigReal};
+
 
 
 use std::sync::Mutex;

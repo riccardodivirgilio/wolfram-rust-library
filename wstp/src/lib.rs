@@ -942,6 +942,17 @@ impl Link {
             ExprKind::Real(real) => {
                 self.put_f64(**real)?;
             },
+            // ExprKind is #[non_exhaustive]: new WXF-derived variants (NumericArray,
+            // PackedArray, ByteArray, Association, BigInteger, BigReal) don't have a
+            // direct WSTP-native serialization here. To send them over WSTP, convert
+            // first (e.g. via wolfram-serializer to Wxf bytes wrapped in a ByteArray
+            // function), or use put_function() / put_byte_array() directly.
+            other => {
+                return Err(Error::custom(format!(
+                    "put_expr: ExprKind variant {:?} not supported by WSTP put — convert via wolfram-serializer or use a lower-level put_* method",
+                    other
+                )));
+            },
         }
 
         Ok(())

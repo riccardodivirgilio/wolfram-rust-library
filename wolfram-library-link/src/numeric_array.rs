@@ -945,3 +945,136 @@ impl TryFrom<u32> for NumericArrayDataType {
         Ok(ok)
     }
 }
+
+//==============================================================================
+// Cross-crate integration with `wolfram-expr`'s portable value-type NumericArray.
+//
+// This section provides:
+//   * `wolfram_expr::NumericArrayRead` impl on the runtime-handle `NumericArray<T>`
+//   * Bidirectional conversions between `wll::NumericArrayDataType` and
+//     `wolfram_expr::NumericArrayDataType` (the two parallel enums share the same
+//     C-ABI discriminants — they're the same numbers under the hood)
+//   * `From` / `TryFrom` conversions between the runtime-handle and the value-type
+//     NumericArray
+//
+// The two `NumericArrayDataType` enums and the two element-type traits
+// (`wll::NumericArrayType` here vs `wolfram_expr::NumericArrayElement`) intentionally
+// stay parallel rather than unified — `wll::NumericArrayType` has an impl for
+// `sys::mcomplex` which can't move to `wolfram-expr` (orphan rule: trait would be
+// foreign, type would be foreign-from-sys). Keeping them parallel preserves the
+// existing public API of `wolfram-library-link` byte-for-byte while still letting
+// `Expr` carry portable NumericArray values.
+//==============================================================================
+
+use wolfram_expr::{
+    NumericArray as ExprNumericArray, NumericArrayDataType as ExprDataType,
+    NumericArrayRead as ExprNumericArrayRead,
+};
+
+impl From<NumericArrayDataType> for ExprDataType {
+    fn from(dt: NumericArrayDataType) -> ExprDataType {
+        // Both enums share the same C-ABI discriminants — `as u32` reads the same
+        // value out of both. `try_from` cannot fail by construction.
+        ExprDataType::try_from(dt as u32).expect("NumericArrayDataType discriminant mismatch")
+    }
+}
+
+impl From<ExprDataType> for NumericArrayDataType {
+    fn from(dt: ExprDataType) -> NumericArrayDataType {
+        NumericArrayDataType::try_from(dt as u32)
+            .expect("NumericArrayDataType discriminant mismatch")
+    }
+}
+
+impl<T> ExprNumericArrayRead for NumericArray<T> {
+    fn data_type(&self) -> ExprDataType {
+        let local: NumericArrayDataType = self.data_type();
+        local.into()
+    }
+
+    fn dimensions(&self) -> &[usize] {
+        // Reuse the existing inherent method — same behavior, no extra runtime call.
+        NumericArray::dimensions(self)
+    }
+
+    fn as_bytes(&self) -> &[u8] {
+        let local_dt: NumericArrayDataType = self.data_type();
+        let elem_size = ExprDataType::from(local_dt).size_in_bytes();
+        let len = self.flattened_length() * elem_size;
+        let ptr = self.data_ptr() as *const u8;
+        // SAFETY: NumericArray's runtime buffer is at least `len` bytes long; lifetime
+        // tied to `&self` so the pointer remains valid for the duration.
+        unsafe { std::slice::from_raw_parts(ptr, len) }
+    }
+}
+
+/// Copy a runtime-handle [`NumericArray<T>`] into a portable owned
+/// [`wolfram_expr::NumericArray`]. Allocates and copies the byte buffer.
+impl<T: NumericArrayType> From<&NumericArray<T>> for ExprNumericArray {
+    fn from(arr: &NumericArray<T>) -> ExprNumericArray {
+        let dt: ExprDataType = NumericArray::<T>::data_type(arr).into();
+        let dims: Vec<usize> = NumericArray::<T>::dimensions(arr).to_vec();
+        let bytes_slice: &[u8] = ExprNumericArrayRead::as_bytes(arr);
+        let bytes: std::sync::Arc<[u8]> = std::sync::Arc::from(bytes_slice);
+        ExprNumericArray::new(dt, dims, bytes)
+    }
+}
+
+/// Copy a runtime-handle type-erased [`NumericArray`] into a portable owned
+/// [`wolfram_expr::NumericArray`].
+impl From<&NumericArray<()>> for ExprNumericArray {
+    fn from(arr: &NumericArray<()>) -> ExprNumericArray {
+        let dt: ExprDataType = NumericArray::<()>::data_type(arr).into();
+        let dims: Vec<usize> = NumericArray::<()>::dimensions(arr).to_vec();
+        let bytes_slice: &[u8] = ExprNumericArrayRead::as_bytes(arr);
+        let bytes: std::sync::Arc<[u8]> = std::sync::Arc::from(bytes_slice);
+        ExprNumericArray::new(dt, dims, bytes)
+    }
+}
+
+/// Allocate a fresh runtime-handle (type-erased) [`NumericArray`] from a portable
+/// owned [`wolfram_expr::NumericArray`]. Calls into the LibraryLink runtime to
+/// allocate the underlying buffer; copies the bytes from the source value.
+impl From<&ExprNumericArray> for NumericArray<()> {
+    fn from(src: &ExprNumericArray) -> NumericArray<()> {
+        let local_dt: NumericArrayDataType = src.data_type().into();
+        let dims = ExprNumericArrayRead::dimensions(src);
+        unsafe {
+            let mut raw: sys::MNumericArray = std::ptr::null_mut();
+            let err: sys::errcode_t = rtl::MNumericArray_new(
+                local_dt.as_raw(),
+                i64::try_from(dims.len()).expect("rank overflows i64"),
+                dims.as_ptr() as *mut sys::mint,
+                &mut raw,
+            );
+            if err != 0 || raw.is_null() {
+                panic!("MNumericArray_new failed with errcode {}", err);
+            }
+            let dst_ptr = rtl::MNumericArray_getData(raw) as *mut u8;
+            let src_bytes = ExprNumericArrayRead::as_bytes(src);
+            std::ptr::copy_nonoverlapping(src_bytes.as_ptr(), dst_ptr, src_bytes.len());
+            NumericArray::<()>::from_raw(raw)
+        }
+    }
+}
+
+/// Allocate a fresh runtime-handle typed [`NumericArray<T>`] from a portable owned
+/// [`wolfram_expr::NumericArray`]. Errors if the source's element type tag does
+/// not match `T::TYPE`.
+impl<T: NumericArrayType> TryFrom<&ExprNumericArray> for NumericArray<T> {
+    type Error = ExprDataType;
+
+    fn try_from(src: &ExprNumericArray) -> Result<NumericArray<T>, ExprDataType> {
+        let src_dt = src.data_type();
+        let expected: ExprDataType = T::TYPE.into();
+        if src_dt != expected {
+            return Err(src_dt);
+        }
+        let untyped: NumericArray<()> = src.into();
+        // Element type matches by check above; transmuting via `from_raw` is safe.
+        unsafe {
+            let raw = untyped.into_raw();
+            Ok(NumericArray::<T>::from_raw(raw))
+        }
+    }
+}

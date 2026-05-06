@@ -6,10 +6,7 @@ impl Expr {
     pub fn try_as_normal(&self) -> Option<&Normal> {
         match self.kind() {
             ExprKind::Normal(ref normal) => Some(normal),
-            ExprKind::Symbol(_)
-            | ExprKind::String(_)
-            | ExprKind::Integer(_)
-            | ExprKind::Real(_) => None,
+            _ => None,
         }
     }
 
@@ -39,10 +36,7 @@ impl Expr {
     pub fn try_as_symbol(&self) -> Option<&Symbol> {
         match self.kind() {
             ExprKind::Symbol(ref symbol) => Some(symbol),
-            ExprKind::Normal(_)
-            | ExprKind::String(_)
-            | ExprKind::Integer(_)
-            | ExprKind::Real(_) => None,
+            _ => None,
         }
     }
 
@@ -51,7 +45,57 @@ impl Expr {
         match self.kind() {
             ExprKind::Integer(int) => Some(Number::Integer(*int)),
             ExprKind::Real(real) => Some(Number::Real(*real)),
-            ExprKind::Normal(_) | ExprKind::String(_) | ExprKind::Symbol(_) => None,
+            _ => None,
+        }
+    }
+
+    /// If this is a [`ByteArray`] expression, return that. Otherwise return None.
+    pub fn try_as_byte_array(&self) -> Option<&ByteArray> {
+        match self.kind() {
+            ExprKind::ByteArray(ref ba) => Some(ba),
+            _ => None,
+        }
+    }
+
+    /// If this is an [`Association`] expression, return that. Otherwise return None.
+    pub fn try_as_association(&self) -> Option<&Association> {
+        match self.kind() {
+            ExprKind::Association(ref a) => Some(a),
+            _ => None,
+        }
+    }
+
+    /// If this is a [`NumericArray`] expression, return that. Otherwise return None.
+    pub fn try_as_numeric_array(&self) -> Option<&NumericArray> {
+        match self.kind() {
+            ExprKind::NumericArray(ref a) => Some(a),
+            _ => None,
+        }
+    }
+
+    /// If this is a [`PackedArray`] expression, return that. Otherwise return None.
+    pub fn try_as_packed_array(&self) -> Option<&PackedArray> {
+        match self.kind() {
+            ExprKind::PackedArray(ref a) => Some(a),
+            _ => None,
+        }
+    }
+
+    /// If this is a [`BigInteger`] expression, return that. Otherwise return None.
+    #[cfg(feature = "bignum")]
+    pub fn try_as_big_integer(&self) -> Option<&BigInteger> {
+        match self.kind() {
+            ExprKind::BigInteger(ref n) => Some(n),
+            _ => None,
+        }
+    }
+
+    /// If this is a [`BigReal`] expression, return that. Otherwise return None.
+    #[cfg(feature = "bignum")]
+    pub fn try_as_big_real(&self) -> Option<&BigReal> {
+        match self.kind() {
+            ExprKind::BigReal(ref r) => Some(r),
+            _ => None,
         }
     }
 
@@ -188,6 +232,60 @@ impl From<Number> for ExprKind {
         match number {
             Number::Integer(int) => ExprKind::Integer(int),
             Number::Real(real) => ExprKind::Real(real),
+        }
+    }
+}
+
+//==============================
+// New WXF-derived From<T> impls
+//==============================
+
+impl From<ByteArray> for Expr {
+    fn from(b: ByteArray) -> Expr {
+        Expr {
+            inner: Arc::new(ExprKind::ByteArray(b)),
+        }
+    }
+}
+
+impl From<Association> for Expr {
+    fn from(a: Association) -> Expr {
+        Expr {
+            inner: Arc::new(ExprKind::Association(a)),
+        }
+    }
+}
+
+impl From<NumericArray> for Expr {
+    fn from(a: NumericArray) -> Expr {
+        Expr {
+            inner: Arc::new(ExprKind::NumericArray(a)),
+        }
+    }
+}
+
+impl From<PackedArray> for Expr {
+    fn from(a: PackedArray) -> Expr {
+        Expr {
+            inner: Arc::new(ExprKind::PackedArray(a)),
+        }
+    }
+}
+
+#[cfg(feature = "bignum")]
+impl From<BigInteger> for Expr {
+    fn from(n: BigInteger) -> Expr {
+        Expr {
+            inner: Arc::new(ExprKind::BigInteger(n)),
+        }
+    }
+}
+
+#[cfg(feature = "bignum")]
+impl From<BigReal> for Expr {
+    fn from(r: BigReal) -> Expr {
+        Expr {
+            inner: Arc::new(ExprKind::BigReal(r)),
         }
     }
 }

@@ -3,8 +3,15 @@
 #![allow(clippy::let_and_return)]
 #![warn(missing_docs)]
 
+mod association;
+mod byte_array;
 mod conversion;
+mod numeric_array;
+mod packed_array;
 mod ptr_cmp;
+
+#[cfg(feature = "bignum")]
+mod bignum;
 
 pub mod symbol;
 
@@ -25,6 +32,16 @@ use std::sync::Arc;
 
 #[doc(inline)]
 pub use self::symbol::Symbol;
+
+pub use self::association::Association;
+pub use self::byte_array::ByteArray;
+pub use self::numeric_array::{
+    NumericArray, NumericArrayDataType, NumericArrayRead, NumericArrayElement,
+};
+pub use self::packed_array::{PackedArray, PackedArrayDataType, PackedArrayElement};
+
+#[cfg(feature = "bignum")]
+pub use self::bignum::{BigInteger, BigReal};
 
 #[cfg(feature = "unstable_parse")]
 pub use self::ptr_cmp::ExprRefCmp;
@@ -171,9 +188,11 @@ impl Expr {
     //       semantics built in to it.
     pub fn tag(&self) -> Option<Symbol> {
         match *self.inner {
-            ExprKind::Integer(_) | ExprKind::Real(_) | ExprKind::String(_) => None,
             ExprKind::Normal(ref normal) => normal.head.tag(),
             ExprKind::Symbol(ref sym) => Some(sym.clone()),
+            // Atomic variants (no symbolic head): Integer, Real, String, ByteArray,
+            // Association, NumericArray, PackedArray, BigInteger, BigReal.
+            _ => None,
         }
     }
 
@@ -182,10 +201,7 @@ impl Expr {
     pub fn normal_head(&self) -> Option<Expr> {
         match *self.inner {
             ExprKind::Normal(ref normal) => Some(normal.head.clone()),
-            ExprKind::Symbol(_)
-            | ExprKind::Integer(_)
-            | ExprKind::Real(_)
-            | ExprKind::String(_) => None,
+            _ => None,
         }
     }
 
@@ -200,10 +216,7 @@ impl Expr {
     pub fn normal_part(&self, index_0: usize) -> Option<&Expr> {
         match self.kind() {
             ExprKind::Normal(ref normal) => normal.contents.get(index_0),
-            ExprKind::Symbol(_)
-            | ExprKind::Integer(_)
-            | ExprKind::Real(_)
-            | ExprKind::String(_) => None,
+            _ => None,
         }
     }
 
@@ -283,7 +296,12 @@ impl Expr {
 }
 
 /// Wolfram Language expression variants.
+///
+/// Marked `#[non_exhaustive]` so that future variant additions (for new WXF wire types,
+/// etc.) are non-breaking. Downstream `match` expressions over `ExprKind` from outside
+/// this crate must include a `_ => …` arm.
 #[allow(missing_docs)]
+#[non_exhaustive]
 #[derive(Clone, PartialEq, Eq, Hash)]
 pub enum ExprKind<E = Expr> {
     Integer(i64),
@@ -291,6 +309,15 @@ pub enum ExprKind<E = Expr> {
     String(String),
     Symbol(Symbol),
     Normal(Normal<E>),
+    // WXF-derived variants:
+    ByteArray(ByteArray),
+    Association(Association),
+    NumericArray(NumericArray),
+    PackedArray(PackedArray),
+    #[cfg(feature = "bignum")]
+    BigInteger(BigInteger),
+    #[cfg(feature = "bignum")]
+    BigReal(BigReal),
 }
 
 /// Wolfram Language "normal" expression: `f[...]`.
@@ -417,6 +444,45 @@ impl fmt::Display for ExprKind {
                 write!(f, "{:?}", string)
             },
             ExprKind::Symbol(ref symbol) => fmt::Display::fmt(symbol, f),
+
+            // ----- WXF-derived variants. These produce best-effort InputForm-like
+            // strings; for guaranteed-roundtripping textual output use
+            // wolfram-serializer's WlSerializer. -----
+            ExprKind::ByteArray(ref ba) => {
+                write!(f, "ByteArray[{:?}]", ba.as_bytes())
+            },
+            ExprKind::Association(ref assoc) => {
+                write!(f, "<|")?;
+                for (i, (k, v)) in assoc.iter().enumerate() {
+                    if i != 0 {
+                        write!(f, ", ")?;
+                    }
+                    write!(f, "{} -> {}", k, v)?;
+                }
+                write!(f, "|>")
+            },
+            ExprKind::NumericArray(ref arr) => {
+                write!(
+                    f,
+                    "NumericArray[<{} elems, {}-byte buffer>, {:?}]",
+                    crate::numeric_array::NumericArrayRead::element_count(arr),
+                    arr.as_bytes().len(),
+                    arr.data_type().name(),
+                )
+            },
+            ExprKind::PackedArray(ref arr) => {
+                write!(
+                    f,
+                    "PackedArray[<{} elems, {}-byte buffer>, {:?}]",
+                    arr.element_count(),
+                    arr.as_bytes().len(),
+                    arr.data_type().name(),
+                )
+            },
+            #[cfg(feature = "bignum")]
+            ExprKind::BigInteger(ref n) => write!(f, "{}", n.to_decimal_string()),
+            #[cfg(feature = "bignum")]
+            ExprKind::BigReal(ref r) => write!(f, "{}", r.as_str()),
         }
     }
 }
