@@ -1,0 +1,9 @@
+[workspace]
+resolver = "2"
+
+members = [
+    "wstp",
+    "wstp-sys",
+    # xtask convention. See: https://github.com/matklad/cargo-xtask
+    "xtask"
+]

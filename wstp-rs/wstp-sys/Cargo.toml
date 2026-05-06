@@ -1,0 +1,22 @@
+[package]
+name = "wstp-sys"
+version = "0.2.9"
+authors = ["Connor Gray <code@connorgray.com>"]
+license = "MIT OR Apache-2.0"
+edition = "2021"
+readme = "README.md"
+repository = "https://github.com/WolframResearch/wstp-rs"
+description = "Low-level FFI bindings to the Wolfram Symbolic Transfer Protocol (WSTP) C API"
+keywords = ["wstp", "mathlink", "wolfram", "wolfram-language", "wolfram-engine"]
+categories = ["external-ffi-bindings", "development-tools::ffi", "encoding"]
+
+# TODO(!): Audit this. Is this the correct name? Will it always be correct? What is the
+#          significance of the "i4" suffix -- is that a version number?
+links = "WSTPi4"
+
+[dependencies]
+link-cplusplus = "1.0.6"
+
+[build-dependencies]
+wolfram-app-discovery = "0.4.7"
+env_logger = { version = "0.10.0", default-features = false }

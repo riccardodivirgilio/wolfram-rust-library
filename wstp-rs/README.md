@@ -1,0 +1,134 @@
+# wstp
+
+[![Crates.io](https://img.shields.io/crates/v/wstp.svg)](https://crates.io/crates/wstp)
+![License](https://img.shields.io/crates/l/wstp.svg)
+[![Documentation](https://docs.rs/wstp/badge.svg)](https://docs.rs/wstp)
+
+#### [API Documentation](https://docs.rs/CRATE-NAME) | [Changelog](./docs/CHANGELOG.md) | [Contributing](./docs/CONTRIBUTING.md)
+
+
+Bindings to the [Wolfram Symbolic Transfer Protocol (WSTP)](https://www.wolfram.com/wstp/).
+
+This crate provides a set of safe and ergonomic bindings to the WSTP library, used to
+transfer Wolfram Language expressions between programs.
+
+## Quick Examples
+
+#### Loopback links
+
+Write an expression to a loopback [`Link`][Link], and then read it back from the same link
+object:
+
+```rust
+use wstp::Link;
+
+fn example() -> Result<(), wstp::Error> {
+    let mut link = Link::new_loopback()?;
+
+    // Write the expression {"a", "b", "c"}
+    link.put_function("System`List", 3)?;
+    link.put_str("a")?;
+    link.put_str("b")?;
+    link.put_str("c")?;
+
+    // Read back the expression, concatenating the elements as we go:
+    let mut buffer = String::new();
+
+    for _ in 0 .. link.test_head("System`List")? {
+        buffer.push_str(link.get_string_ref()?.as_str())
+    }
+
+    assert_eq!(buffer, "abc");
+
+    Ok(())
+}
+
+example();
+```
+
+#### Full-duplex links
+
+Transfer the expression `"hello!"` from one [`Link`][Link] endpoint to another:
+
+```rust
+use wstp::Protocol;
+
+let (mut a, mut b) = wstp::channel(Protocol::SharedMemory).unwrap();
+
+a.put_str("hello!").unwrap();
+a.flush().unwrap();
+
+assert_eq!(b.get_string().unwrap(), "hello!");
+```
+
+See [`wolfram-library-link`][wolfram-library-link] for
+[examples of using WSTP links][wstp-wll-example] to transfer expressions to and from
+LibraryLink functions.
+
+[wstp-wll-example]: https://github.com/WolframResearch/wolfram-library-link-rs/blob/master/wolfram-library-link/examples/wstp.rs
+
+[Link]: https://docs.rs/wstp/latest/wstp/struct.Link.html
+
+## Building `wstp`
+
+The `wstp` crate uses [`wolfram-app-discovery`][wolfram-app-discovery] to locate a local
+installation of the Wolfram Language that contains a suitable copy of the WSTP SDK. If the
+WSTP SDK cannot be located, `wstp` will fail to build.
+
+If you have installed the Wolfram Language to a location unknown to `wolfram-app-discovery`,
+you may specify the installed location manually by setting the `WOLFRAM_APP_DISCOVERY`
+environment variable. See [Configuring wolfram-app-discovery][wad-configuration] for details.
+
+[wad-configuration]: https://github.com/WolframResearch/wolfram-app-discovery-rs#configuration
+
+## Related Links
+
+#### Related crates
+
+* [`wolfram-library-link`][wolfram-library-link] — author libraries that can be
+  dynamically loaded by the Wolfram Language
+* [`wolfram-expr`][wolfram-expr] — efficient and ergonomic representation of Wolfram
+  expressions in Rust.
+* [`wolfram-app-discovery`][wolfram-app-discovery] — utility for locating local
+  installations of Wolfram applications and the Wolfram Language.
+
+
+[wolfram-app-discovery]: https://crates.io/crates/wolfram-app-discovery
+[wolfram-library-link]: https://crates.io/crates/wolfram-library-link
+[wolfram-expr]: https://crates.io/crates/wolfram-expr
+
+#### Related documentation
+
+* [WSTP and External Program Communication](https://reference.wolfram.com/language/tutorial/WSTPAndExternalProgramCommunicationOverview.html)
+* [How WSTP Is Used](https://reference.wolfram.com/language/tutorial/HowWSTPIsUsed.html)
+
+### Developer Notes
+
+See [**Development.md**](./docs/Development.md) for instructions on how to perform common
+development tasks when contributing to the `wstp` crate.
+
+See [**Maintenance.md**](./docs/Maintenance.md) for instructions on how to keep `wstp`
+up to date as new versions of the Wolfram Language are released.
+
+## License
+
+Licensed under either of
+
+ * Apache License, Version 2.0
+   ([LICENSE-APACHE](LICENSE-APACHE) or <http://www.apache.org/licenses/LICENSE-2.0>)
+ * MIT license
+   ([LICENSE-MIT](LICENSE-MIT) or <http://opensource.org/licenses/MIT>)
+
+at your option.
+
+Note: Licensing of the WSTP library linked by the [wstp](https://crates.io/crates/wstp)
+crate is covered by the terms of the
+[MathLink License Agreement](https://www.wolfram.com/legal/agreements/mathlink.html).
+
+## Contribution
+
+Unless you explicitly state otherwise, any contribution intentionally submitted
+for inclusion in the work by you, as defined in the Apache-2.0 license, shall be
+dual licensed as above, without any additional terms or conditions.
+
+See [CONTRIBUTING.md](./CONTRIBUTING.md) for more information.
