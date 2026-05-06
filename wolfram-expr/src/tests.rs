@@ -75,14 +75,14 @@ fn byte_array_variant_roundtrip() {
 fn association_variant_roundtrip() {
     let mut a = Association::new();
     a.insert(Expr::from("k1"), Expr::from(1));
-    a.insert(Expr::from("k2"), Expr::from(2));
+    a.insert_delayed(Expr::from("k2"), Expr::from(2));
     let expr = Expr::from(a.clone());
     assert!(matches!(expr.kind(), ExprKind::Association(_)));
     assert_eq!(expr.try_as_association(), Some(&a));
-    assert_eq!(
-        expr.try_as_association().unwrap().get(&Expr::from("k1")),
-        Some(&Expr::from(1))
-    );
+    let extracted = expr.try_as_association().unwrap();
+    assert_eq!(extracted.get(&Expr::from("k1")), Some(&Expr::from(1)));
+    assert!(!extracted.get_entry(&Expr::from("k1")).unwrap().delayed);
+    assert!(extracted.get_entry(&Expr::from("k2")).unwrap().delayed);
 }
 
 #[test]

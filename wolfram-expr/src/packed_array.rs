@@ -19,7 +19,7 @@ use crate::numeric_array::NumericArrayRead;
 ///
 /// Subset of [`NumericArrayDataType`][crate::NumericArrayDataType] — only the types
 /// that the Wolfram Language treats as valid packed-array element types.
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[repr(u8)]
 #[allow(missing_docs)]
 pub enum PackedArrayDataType {
@@ -104,7 +104,7 @@ impl PackedArrayElement for f64 {
 /// Owned [`PackedArray`][ref/PackedArray]<sub>WL</sub> value.
 ///
 /// [ref/PackedArray]: https://reference.wolfram.com/language/ref/Developer/PackedArrayQ.html
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct PackedArray {
     data_type: PackedArrayDataType,
     dimensions: Vec<usize>,

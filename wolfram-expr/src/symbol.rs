@@ -130,6 +130,27 @@ impl Symbol {
         Some(sym_ref.to_symbol())
     }
 
+    /// Construct a [`Symbol`] from a name produced by Wolfram WXF serialization,
+    /// which may be either fully-qualified (``"System`Plus"``) or context-less
+    /// (``"Plus"``) — the kernel deserializing the wire form re-resolves
+    /// context-less names against `$ContextPath`.
+    ///
+    /// Accepts any string that parses as either an absolute [`Symbol`] or a bare
+    /// [`SymbolName`]. Returns `None` for malformed names (e.g. with spaces, leading
+    /// digits, or stray backticks).
+    pub fn try_from_wxf_name(input: &str) -> Option<Self> {
+        if let Some(sym_ref) = SymbolRef::try_new(input) {
+            return Some(sym_ref.to_symbol());
+        }
+        // Bare name (no backtick) — accept if it's a valid SymbolName.
+        if SymbolNameRef::try_new(input).is_some() {
+            // SAFETY: validated by SymbolNameRef::try_new — input is a valid WL
+            // identifier component, just lacks an explicit context.
+            return Some(unsafe { Symbol::unchecked_new(input.to_owned()) });
+        }
+        None
+    }
+
     /// Construct a symbol from `input`.
     ///
     /// # Panics

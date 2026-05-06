@@ -33,7 +33,7 @@ use std::sync::Arc;
 #[doc(inline)]
 pub use self::symbol::Symbol;
 
-pub use self::association::Association;
+pub use self::association::{Association, RuleEntry};
 pub use self::byte_array::ByteArray;
 pub use self::numeric_array::{
     NumericArray, NumericArrayDataType, NumericArrayRead, NumericArrayElement,
@@ -66,7 +66,7 @@ pub use self::ptr_cmp::ExprRefCmp;
 ///
 /// Internally, `Expr` is an atomically reference-counted [`ExprKind`]. This makes cloning
 /// an expression computationally inexpensive.
-#[derive(Clone, PartialEq, Eq, Hash)]
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Expr {
     inner: Arc<ExprKind>,
 }
@@ -302,7 +302,7 @@ impl Expr {
 /// this crate must include a `_ => …` arm.
 #[allow(missing_docs)]
 #[non_exhaustive]
-#[derive(Clone, PartialEq, Eq, Hash)]
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum ExprKind<E = Expr> {
     Integer(i64),
     Real(F64),
@@ -324,7 +324,7 @@ pub enum ExprKind<E = Expr> {
 ///
 /// A *normal* expression is any expression that consists of a head and zero or
 /// more arguments.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Normal<E = Expr> {
     /// The head of this normal expression.
     head: E,
@@ -338,7 +338,7 @@ pub struct Normal<E = Expr> {
 
 /// Subset of [`ExprKind`] that covers number-type expression values.
 #[allow(missing_docs)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Number {
     // TODO: Rename this to MachineInteger
     Integer(i64),
@@ -453,11 +453,12 @@ impl fmt::Display for ExprKind {
             },
             ExprKind::Association(ref assoc) => {
                 write!(f, "<|")?;
-                for (i, (k, v)) in assoc.iter().enumerate() {
+                for (i, (k, entry)) in assoc.iter().enumerate() {
                     if i != 0 {
                         write!(f, ", ")?;
                     }
-                    write!(f, "{} -> {}", k, v)?;
+                    let arrow = if entry.delayed { ":>" } else { "->" };
+                    write!(f, "{} {} {}", k, arrow, entry.value)?;
                 }
                 write!(f, "|>")
             },

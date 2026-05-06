@@ -9,7 +9,7 @@ use num_bigint::BigInt;
 /// Arbitrary-precision integer — Wolfram Language `BigInteger`.
 ///
 /// Wraps [`num_bigint::BigInt`]. Available when the `bignum` feature is enabled.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct BigInteger(pub BigInt);
 
 impl BigInteger {
@@ -57,7 +57,7 @@ impl From<i64> for BigInteger {
 /// both a value and a precision). The wire representation in WXF is a digit string
 /// like `"3.14159265358979323846`50."` — we preserve it as `digits` (a `String`)
 /// for lossless WXF round-trip plus an optional `precision` annotation.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct BigReal {
     /// The textual representation, including any precision marker (e.g. `` `50 ``).
     pub digits: String,

@@ -1,91 +1,161 @@
 //! [`Association`][ref/Association]<sub>WL</sub> data type — `<|k -> v, ...|>`.
 //!
-//! Associations preserve insertion order and are wire-distinct from
-//! `Function[Association, Rule[k, v], ...]` in WXF (token `'A'`).
+//! Wire-distinct from `Function[Association, Rule[k, v], ...]` in WXF (token `'A'`).
+//!
+//! Implementation: a [`BTreeMap`] keyed by [`Expr`] for O(log n) lookup. Each value
+//! tracks whether the entry is a `Rule` (`->`, immediate) or `RuleDelayed` (`:>`,
+//! held). Iteration order is by key (sorted), not insertion order.
 //!
 //! [ref/Association]: https://reference.wolfram.com/language/ref/Association.html
 
+use std::collections::BTreeMap;
+use std::iter::FromIterator;
+
 use crate::Expr;
 
-/// Ordered key/value collection — Wolfram Language `<|...|>`.
-///
-/// Stored as a `Vec<(Expr, Expr)>` to preserve insertion order, mirroring WL's
-/// `KeyValueMap`-style semantics. For value-based lookup use [`get`][Self::get];
-/// for full traversal use [`iter`][Self::iter].
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Default)]
+/// Single association entry — value plus a flag indicating Rule vs RuleDelayed.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct RuleEntry {
+    /// The right-hand side expression.
+    pub value: Expr,
+    /// `false` for `Rule` (`->`, immediate), `true` for `RuleDelayed` (`:>`, held).
+    pub delayed: bool,
+}
+
+impl RuleEntry {
+    /// Construct a `Rule` (`->`, immediate) entry.
+    pub fn rule(value: Expr) -> Self {
+        RuleEntry {
+            value,
+            delayed: false,
+        }
+    }
+
+    /// Construct a `RuleDelayed` (`:>`, held) entry.
+    pub fn rule_delayed(value: Expr) -> Self {
+        RuleEntry {
+            value,
+            delayed: true,
+        }
+    }
+}
+
+/// Wolfram Language `<|...|>` — keyed expression collection with fast lookup.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 pub struct Association {
-    pairs: Vec<(Expr, Expr)>,
+    map: BTreeMap<Expr, RuleEntry>,
 }
 
 impl Association {
     /// New empty association.
     pub fn new() -> Self {
-        Association { pairs: Vec::new() }
-    }
-
-    /// New association from a vector of (key, value) pairs.
-    pub fn from_pairs(pairs: Vec<(Expr, Expr)>) -> Self {
-        Association { pairs }
+        Association {
+            map: BTreeMap::new(),
+        }
     }
 
     /// Number of entries.
     pub fn len(&self) -> usize {
-        self.pairs.len()
+        self.map.len()
     }
 
     /// Whether the association is empty.
     pub fn is_empty(&self) -> bool {
-        self.pairs.is_empty()
+        self.map.is_empty()
     }
 
-    /// Append a key-value pair. If the key already exists, both pairs will be present
-    /// (matching WL's behavior — duplicates are allowed but only the last is reachable
-    /// via `Lookup`).
-    pub fn insert(&mut self, key: Expr, value: Expr) {
-        self.pairs.push((key, value));
+    /// Insert a `Rule` (`->`, immediate). Replaces any existing entry with the same key.
+    pub fn insert(&mut self, key: Expr, value: Expr) -> Option<RuleEntry> {
+        self.map.insert(key, RuleEntry::rule(value))
     }
 
-    /// Find the value associated with `key`. Returns the LAST inserted match (matches
-    /// `Lookup[assoc, key]` semantics in WL).
+    /// Insert a `RuleDelayed` (`:>`, held). Replaces any existing entry with the same key.
+    pub fn insert_delayed(&mut self, key: Expr, value: Expr) -> Option<RuleEntry> {
+        self.map.insert(key, RuleEntry::rule_delayed(value))
+    }
+
+    /// Insert a raw [`RuleEntry`].
+    pub fn insert_entry(&mut self, key: Expr, entry: RuleEntry) -> Option<RuleEntry> {
+        self.map.insert(key, entry)
+    }
+
+    /// Fast O(log n) value lookup. Returns the right-hand side expression only —
+    /// use [`get_entry`][Self::get_entry] if you need the delayed flag too.
     pub fn get(&self, key: &Expr) -> Option<&Expr> {
-        self.pairs.iter().rev().find(|(k, _)| k == key).map(|(_, v)| v)
+        self.map.get(key).map(|e| &e.value)
     }
 
-    /// Iterate over all (key, value) pairs in insertion order.
-    pub fn iter(&self) -> std::slice::Iter<'_, (Expr, Expr)> {
-        self.pairs.iter()
+    /// Fast O(log n) entry lookup including the delayed flag.
+    pub fn get_entry(&self, key: &Expr) -> Option<&RuleEntry> {
+        self.map.get(key)
     }
 
-    /// Borrow the underlying pair vector.
-    pub fn as_pairs(&self) -> &[(Expr, Expr)] {
-        &self.pairs
+    /// Whether `key` is present.
+    pub fn contains_key(&self, key: &Expr) -> bool {
+        self.map.contains_key(key)
     }
 
-    /// Consume into a vector of pairs.
-    pub fn into_pairs(self) -> Vec<(Expr, Expr)> {
-        self.pairs
+    /// Remove the entry for `key` and return it, if any.
+    pub fn remove(&mut self, key: &Expr) -> Option<RuleEntry> {
+        self.map.remove(key)
+    }
+
+    /// Iterate over entries in key order (BTreeMap iteration is sorted).
+    pub fn iter(&self) -> std::collections::btree_map::Iter<'_, Expr, RuleEntry> {
+        self.map.iter()
+    }
+
+    /// Borrow the underlying [`BTreeMap`].
+    pub fn as_btree(&self) -> &BTreeMap<Expr, RuleEntry> {
+        &self.map
+    }
+
+    /// Consume into the underlying [`BTreeMap`].
+    pub fn into_btree(self) -> BTreeMap<Expr, RuleEntry> {
+        self.map
     }
 }
 
 impl<'a> IntoIterator for &'a Association {
-    type Item = &'a (Expr, Expr);
-    type IntoIter = std::slice::Iter<'a, (Expr, Expr)>;
+    type Item = (&'a Expr, &'a RuleEntry);
+    type IntoIter = std::collections::btree_map::Iter<'a, Expr, RuleEntry>;
     fn into_iter(self) -> Self::IntoIter {
-        self.pairs.iter()
+        self.map.iter()
     }
 }
 
 impl IntoIterator for Association {
-    type Item = (Expr, Expr);
-    type IntoIter = std::vec::IntoIter<(Expr, Expr)>;
+    type Item = (Expr, RuleEntry);
+    type IntoIter = std::collections::btree_map::IntoIter<Expr, RuleEntry>;
     fn into_iter(self) -> Self::IntoIter {
-        self.pairs.into_iter()
+        self.map.into_iter()
     }
 }
 
-impl From<Vec<(Expr, Expr)>> for Association {
-    fn from(pairs: Vec<(Expr, Expr)>) -> Self {
-        Association { pairs }
+impl FromIterator<(Expr, RuleEntry)> for Association {
+    fn from_iter<I: IntoIterator<Item = (Expr, RuleEntry)>>(iter: I) -> Self {
+        Association {
+            map: iter.into_iter().collect(),
+        }
+    }
+}
+
+impl FromIterator<(Expr, Expr)> for Association {
+    /// Convenience: build an Association from `(key, value)` pairs treating each as
+    /// an immediate `Rule` (not delayed).
+    fn from_iter<I: IntoIterator<Item = (Expr, Expr)>>(iter: I) -> Self {
+        Association {
+            map: iter
+                .into_iter()
+                .map(|(k, v)| (k, RuleEntry::rule(v)))
+                .collect(),
+        }
+    }
+}
+
+impl From<BTreeMap<Expr, RuleEntry>> for Association {
+    fn from(map: BTreeMap<Expr, RuleEntry>) -> Self {
+        Association { map }
     }
 }
 
@@ -102,31 +172,35 @@ mod tests {
     }
 
     #[test]
-    fn insertion_order_preserved() {
+    fn fast_get() {
         let mut a = Association::new();
-        a.insert(Expr::from("first"), Expr::from(1));
-        a.insert(Expr::from("second"), Expr::from(2));
-        a.insert(Expr::from("third"), Expr::from(3));
-
-        let keys: Vec<&str> = a
-            .iter()
-            .filter_map(|(k, _)| k.try_as_str())
-            .collect();
-        assert_eq!(keys, ["first", "second", "third"]);
-    }
-
-    #[test]
-    fn lookup_returns_last_match() {
-        let mut a = Association::new();
-        a.insert(Expr::from("key"), Expr::from(1));
-        a.insert(Expr::from("key"), Expr::from(2));
-        assert_eq!(a.get(&Expr::from("key")), Some(&Expr::from(2)));
-    }
-
-    #[test]
-    fn lookup_missing() {
-        let a = Association::from_pairs(vec![(Expr::from("k"), Expr::from(1))]);
+        a.insert(Expr::from("k"), Expr::from(42));
+        assert_eq!(a.get(&Expr::from("k")), Some(&Expr::from(42)));
         assert_eq!(a.get(&Expr::from("missing")), None);
+    }
+
+    #[test]
+    fn rule_vs_rule_delayed() {
+        let mut a = Association::new();
+        a.insert(Expr::from("eager"), Expr::from(1));
+        a.insert_delayed(Expr::from("lazy"), Expr::from(2));
+
+        let eager = a.get_entry(&Expr::from("eager")).unwrap();
+        assert!(!eager.delayed);
+        assert_eq!(eager.value, Expr::from(1));
+
+        let lazy = a.get_entry(&Expr::from("lazy")).unwrap();
+        assert!(lazy.delayed);
+        assert_eq!(lazy.value, Expr::from(2));
+    }
+
+    #[test]
+    fn insert_overwrites_and_returns_old() {
+        let mut a = Association::new();
+        assert!(a.insert(Expr::from("k"), Expr::from(1)).is_none());
+        let old = a.insert(Expr::from("k"), Expr::from(2)).unwrap();
+        assert_eq!(old.value, Expr::from(1));
+        assert_eq!(a.get(&Expr::from("k")), Some(&Expr::from(2)));
     }
 
     #[test]

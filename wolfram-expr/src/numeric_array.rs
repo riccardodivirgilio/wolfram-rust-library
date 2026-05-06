@@ -24,7 +24,7 @@ use std::sync::Arc;
 /// `MNumericArray_Data_Type` enum (from `WolframLibrary.h`) so that
 /// `wolfram-library-link` can `pub use` this type without changing the meaning of
 /// existing `as u32` casts or `TryFrom<u32>` round-trips.
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[repr(u32)]
 #[allow(missing_docs)]
 pub enum NumericArrayDataType {
@@ -250,7 +250,7 @@ pub trait NumericArrayRead {
 ///
 /// [ref/NumericArray]: https://reference.wolfram.com/language/ref/NumericArray.html
 /// [wll-na]: https://docs.rs/wolfram-library-link/latest/wolfram_library_link/struct.NumericArray.html
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct NumericArray {
     data_type: NumericArrayDataType,
     dimensions: Vec<usize>,

@@ -10,7 +10,7 @@ use std::sync::Arc;
 /// Owned [`ByteArray`][ref/ByteArray]<sub>WL</sub> value — refcounted byte buffer.
 ///
 /// [ref/ByteArray]: https://reference.wolfram.com/language/ref/ByteArray.html
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ByteArray {
     bytes: Arc<[u8]>,
 }
