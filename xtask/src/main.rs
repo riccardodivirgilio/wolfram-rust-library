@@ -69,7 +69,7 @@ fn main() {
                     )
                 })
                 .unwrap();
-            generate_wstp_bindings(&wolfram_version, sdk.wstp_c_header_path(), &target);
+            generate_wstp_bindings(&wolfram_version, &sdk.wstp_c_header_path(), &target);
         },
         Commands::GenLibraryLinkBindings { target } => gen_library_link(target),
     }
@@ -113,7 +113,7 @@ fn gen_wstp(target: Option<String>) {
             continue;
         };
 
-        generate_wstp_bindings(&wolfram_version, sdk.wstp_c_header_path(), target);
+        generate_wstp_bindings(&wolfram_version, &sdk.wstp_c_header_path(), target);
     }
 }
 
