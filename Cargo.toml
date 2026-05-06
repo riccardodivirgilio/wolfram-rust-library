@@ -1,4 +1,23 @@
 [workspace]
 resolver = "2"
 
-members = []
+members = [
+    "wolfram-expr",
+    "wstp",
+    "wstp-sys",
+    "wolfram-library-link",
+    "wolfram-library-link-sys",
+    "wolfram-library-link-macros",
+    "xtask",
+]
+
+# default-members excludes the -sys crates so contributors without a local
+# Wolfram installation can still run `cargo check` / `cargo test` from the
+# workspace root. Building the -sys crates requires Wolfram (their build
+# scripts use `wolfram-app-discovery` to locate the C headers).
+default-members = [
+    "wolfram-expr",
+    "wstp",
+    "wolfram-library-link",
+    "wolfram-library-link-macros",
+]
