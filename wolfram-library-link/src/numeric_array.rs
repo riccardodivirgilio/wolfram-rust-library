@@ -891,7 +891,7 @@ impl<T: NumericArrayType> From<&NumericArray<T>> for ExprNumericArray {
         ExprNumericArray::new(
             arr.data_type(),
             NumericArray::dimensions(arr).to_vec(),
-            std::sync::Arc::from(ExprNumericArrayRead::as_bytes(arr)),
+            ExprNumericArrayRead::as_bytes(arr).to_vec(),
         )
     }
 }
@@ -901,7 +901,7 @@ impl From<&NumericArray<()>> for ExprNumericArray {
         ExprNumericArray::new(
             arr.data_type(),
             NumericArray::dimensions(arr).to_vec(),
-            std::sync::Arc::from(ExprNumericArrayRead::as_bytes(arr)),
+            ExprNumericArrayRead::as_bytes(arr).to_vec(),
         )
     }
 }

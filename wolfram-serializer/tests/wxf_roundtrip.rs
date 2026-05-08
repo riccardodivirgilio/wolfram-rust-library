@@ -1,7 +1,5 @@
 //! WXF self-roundtrip tests: export → import → equal.
 
-use std::sync::Arc;
-
 use wolfram_expr::{
     Association, ByteArray, Expr, NumericArray, NumericArrayDataType, PackedArray,
     PackedArrayDataType, Symbol,
@@ -66,9 +64,9 @@ fn function_curried_head() {
 
 #[test]
 fn byte_array_roundtrip() {
-    roundtrip(Expr::from(ByteArray::new(&[])));
-    roundtrip(Expr::from(ByteArray::new(&[0, 1, 2, 3, 0xff])));
-    roundtrip(Expr::from(ByteArray::new(&(0..=255).collect::<Vec<u8>>())));
+    roundtrip(Expr::from(ByteArray::new()));
+    roundtrip(Expr::from(ByteArray::from(vec![0u8, 1, 2, 3, 0xff])));
+    roundtrip(Expr::from((0..=255u8).collect::<ByteArray>()));
 }
 
 #[test]
@@ -96,7 +94,7 @@ fn numeric_array_unsigned_3d() {
     let arr = NumericArray::new(
         NumericArrayDataType::UBit8,
         vec![2, 2, 2],
-        Arc::from(&[1u8, 2, 3, 4, 5, 6, 7, 8][..]),
+        vec![1u8, 2, 3, 4, 5, 6, 7, 8],
     );
     roundtrip(Expr::from(arr));
 }
@@ -109,23 +107,52 @@ fn packed_array_real64() {
 
 #[test]
 fn packed_array_int32_2d() {
-    let arr = PackedArray::new(
-        PackedArrayDataType::Integer32,
-        vec![2, 2],
-        Arc::from({
-            let v: Vec<i32> = vec![1, 2, 3, 4];
-            let bytes: &[u8] = unsafe {
-                std::slice::from_raw_parts(v.as_ptr() as *const u8, std::mem::size_of_val(&v[..]))
-            };
-            bytes.to_vec().into_boxed_slice()
-        }),
-    );
+    // Build the byte buffer from a typed Vec<i32>:
+    let v: Vec<i32> = vec![1, 2, 3, 4];
+    let bytes: Vec<u8> = unsafe {
+        std::slice::from_raw_parts(v.as_ptr() as *const u8, std::mem::size_of_val(&v[..]))
+    }
+    .to_vec();
+    let arr = PackedArray::new(PackedArrayDataType::Integer32, vec![2, 2], bytes);
     roundtrip(Expr::from(arr));
 }
 
 #[test]
 fn empty_function() {
     roundtrip(Expr::list(vec![]));
+}
+
+// `Vec<T>` direct serialization: numeric T → NumericArray; u8 → ByteArray.
+
+#[test]
+fn vec_u8_serializes_as_byte_array() {
+    let bytes = wolfram_serializer::export(&vec![1u8, 2, 3, 0xff], wolfram_serializer::Format::Wxf)
+        .unwrap();
+    let parsed = wolfram_serializer::import(&bytes, wolfram_serializer::Format::Wxf).unwrap();
+    // Importing brings it back as ExprKind::ByteArray:
+    assert!(matches!(parsed.kind(), wolfram_expr::ExprKind::ByteArray(_)));
+    assert_eq!(parsed.try_as_byte_array().unwrap().as_slice(), &[1u8, 2, 3, 0xff]);
+}
+
+#[test]
+fn vec_i32_serializes_as_numeric_array() {
+    let bytes = wolfram_serializer::export(&vec![10i32, 20, 30, 40], wolfram_serializer::Format::Wxf)
+        .unwrap();
+    let parsed = wolfram_serializer::import(&bytes, wolfram_serializer::Format::Wxf).unwrap();
+    let arr = parsed.try_as_numeric_array().expect("expected NumericArray");
+    assert_eq!(arr.data_type(), NumericArrayDataType::Bit32);
+    assert_eq!(arr.dimensions(), &[4]);
+    assert_eq!(arr.try_as_slice::<i32>(), Some([10, 20, 30, 40].as_slice()));
+}
+
+#[test]
+fn vec_f64_serializes_as_numeric_array() {
+    let bytes = wolfram_serializer::export(&vec![1.5f64, 2.5, 3.5], wolfram_serializer::Format::Wxf)
+        .unwrap();
+    let parsed = wolfram_serializer::import(&bytes, wolfram_serializer::Format::Wxf).unwrap();
+    let arr = parsed.try_as_numeric_array().expect("expected NumericArray");
+    assert_eq!(arr.data_type(), NumericArrayDataType::Real64);
+    assert_eq!(arr.try_as_slice::<f64>(), Some([1.5, 2.5, 3.5].as_slice()));
 }
 
 #[test]

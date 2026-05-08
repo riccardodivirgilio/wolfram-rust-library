@@ -2,7 +2,6 @@
 //! each token to the appropriate `consume_*` method on the consumer.
 
 use std::io::{Cursor, Read};
-use std::sync::Arc;
 
 use wolfram_expr::{NumericArray, PackedArray, PackedArrayDataType};
 
@@ -208,7 +207,7 @@ fn parse_numeric_array<R: Read>(r: &mut R) -> Result<NumericArray, Error> {
     let elem_count: usize = dims.iter().product();
     let byte_count = elem_count * dt.size_in_bytes();
     let bytes = read_exact_n(r, byte_count)?;
-    Ok(NumericArray::new(dt, dims, Arc::from(bytes.into_boxed_slice())))
+    Ok(NumericArray::new(dt, dims, bytes))
 }
 
 fn parse_packed_array<R: Read>(r: &mut R) -> Result<PackedArray, Error> {
@@ -241,5 +240,5 @@ fn parse_packed_array<R: Read>(r: &mut R) -> Result<PackedArray, Error> {
     let elem_count: usize = dims.iter().product();
     let byte_count = elem_count * pdt.size_in_bytes();
     let bytes = read_exact_n(r, byte_count)?;
-    Ok(PackedArray::new(pdt, dims, Arc::from(bytes.into_boxed_slice())))
+    Ok(PackedArray::new(pdt, dims, bytes))
 }

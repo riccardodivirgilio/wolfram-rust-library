@@ -3,7 +3,7 @@
 
 use crate::Error;
 use wolfram_expr::{
-    Association, ByteArray, Expr, ExprKind, NumericArray, PackedArray, Symbol,
+    Association, Expr, ExprKind, NumericArray, NumericArrayElement, PackedArray, Symbol,
 };
 
 #[cfg(feature = "bignum")]
@@ -135,21 +135,70 @@ impl<T: ToWolfram + ?Sized> ToWolfram for Box<T> {
     }
 }
 
-impl<T: ToWolfram> ToWolfram for Vec<T> {
+// `Vec<u8>` and `[u8]` serialize as a `ByteArray` token — Wolfram's idiomatic
+// "byte buffer" representation, distinct from a `List` of unsigned 8-bit integers.
+impl ToWolfram for Vec<u8> {
     fn serialize(&self, s: &mut dyn Serializer) -> Result<(), Error> {
-        let head = Symbol::new("System`List");
-        let args: Vec<&dyn ToWolfram> = self.iter().map(|e| e as &dyn ToWolfram).collect();
-        s.serialize_function(&head, &args)
+        s.serialize_byte_array(self)
     }
 }
 
-impl<T: ToWolfram> ToWolfram for [T] {
+impl ToWolfram for [u8] {
     fn serialize(&self, s: &mut dyn Serializer) -> Result<(), Error> {
-        let head = Symbol::new("System`List");
-        let args: Vec<&dyn ToWolfram> = self.iter().map(|e| e as &dyn ToWolfram).collect();
-        s.serialize_function(&head, &args)
+        s.serialize_byte_array(self)
     }
 }
+
+// `Vec<T>` and `[T]` for *other* numeric types (the rest of [`NumericArrayElement`]
+// — i8, i16, i32, i64, u16, u32, u64, f32, f64) serialize as a 1-dimensional
+// [`NumericArray`] tagged with the matching element type.
+//
+// Heterogeneous / non-numeric vectors (Vec<Expr>, Vec<String>, Vec<MyStruct>, …)
+// are intentionally *not* implemented — they have no faithful NumericArray
+// representation, so writing `vec![expr1, expr2].serialize(s)` is a compile
+// error. Build a list explicitly via `Expr::list(...)` or `Expr::normal(...)`.
+impl<T: VecAsNumericArray> ToWolfram for Vec<T> {
+    fn serialize(&self, s: &mut dyn Serializer) -> Result<(), Error> {
+        let arr = NumericArray::from_slice::<T>(vec![self.len()], self);
+        s.serialize_numeric_array(&arr)
+    }
+}
+
+impl<T: VecAsNumericArray> ToWolfram for [T] {
+    fn serialize(&self, s: &mut dyn Serializer) -> Result<(), Error> {
+        let arr = NumericArray::from_slice::<T>(vec![self.len()], self);
+        s.serialize_numeric_array(&arr)
+    }
+}
+
+/// Sealed marker — types valid as the element type of a `Vec<T>`/`[T]` that
+/// serializes as a [`NumericArray`]. The set is exactly
+/// [`NumericArrayElement`] minus `u8` (which serializes as a [`ByteArray`]
+/// via the dedicated `Vec<u8>`/`[u8]` impls above).
+pub trait VecAsNumericArray: NumericArrayElement + vec_as_numeric_sealed::Sealed {}
+
+mod vec_as_numeric_sealed {
+    pub trait Sealed {}
+    impl Sealed for i8 {}
+    impl Sealed for i16 {}
+    impl Sealed for i32 {}
+    impl Sealed for i64 {}
+    impl Sealed for u16 {}
+    impl Sealed for u32 {}
+    impl Sealed for u64 {}
+    impl Sealed for f32 {}
+    impl Sealed for f64 {}
+}
+
+impl VecAsNumericArray for i8 {}
+impl VecAsNumericArray for i16 {}
+impl VecAsNumericArray for i32 {}
+impl VecAsNumericArray for i64 {}
+impl VecAsNumericArray for u16 {}
+impl VecAsNumericArray for u32 {}
+impl VecAsNumericArray for u64 {}
+impl VecAsNumericArray for f32 {}
+impl VecAsNumericArray for f64 {}
 
 //==============================================================================
 // wolfram-expr type impls
@@ -161,11 +210,7 @@ impl ToWolfram for Symbol {
     }
 }
 
-impl ToWolfram for ByteArray {
-    fn serialize(&self, s: &mut dyn Serializer) -> Result<(), Error> {
-        s.serialize_byte_array(self.as_bytes())
-    }
-}
+// (`Vec<u8>` is a `ByteArray` — see the specialized `ToWolfram for Vec<u8>` above.)
 
 impl ToWolfram for NumericArray {
     fn serialize(&self, s: &mut dyn Serializer) -> Result<(), Error> {
@@ -219,7 +264,7 @@ impl ToWolfram for Expr {
                     normal.elements().iter().map(|e| e as &dyn ToWolfram).collect();
                 s.serialize_function(normal.head(), &args)
             }
-            ExprKind::ByteArray(b) => s.serialize_byte_array(b.as_bytes()),
+            ExprKind::ByteArray(b) => s.serialize_byte_array(b.as_slice()),
             ExprKind::Association(a) => a.serialize(s),
             ExprKind::NumericArray(arr) => s.serialize_numeric_array(arr),
             ExprKind::PackedArray(arr) => s.serialize_packed_array(arr),

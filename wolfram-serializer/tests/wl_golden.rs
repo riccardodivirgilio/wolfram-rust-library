@@ -53,7 +53,7 @@ fn association_arrows() {
 #[test]
 fn byte_array_base64() {
     // bytes [0x00, 0x01, 0x02] -> base64 "AAEC"
-    let ba = ByteArray::new(&[0x00, 0x01, 0x02]);
+    let ba = ByteArray::from(vec![0x00, 0x01, 0x02]);
     assert_eq!(wl(&Expr::from(ba)), r#"ByteArray["AAEC"]"#);
 }
 

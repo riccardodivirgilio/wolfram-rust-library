@@ -16,7 +16,9 @@
 //! [wll]: https://docs.rs/wolfram-library-link
 
 use std::convert::TryFrom;
-use std::sync::Arc;
+
+use crate::array_buf::{ArrayBuf, ArrayTag};
+use crate::ByteArray;
 
 /// Dynamic element-type tag for a [`NumericArray`].
 ///
@@ -243,46 +245,35 @@ pub trait NumericArrayRead {
 }
 
 //======================================
-// Owned value-type NumericArray
+// ArrayTag impl + NumericArray type alias
 //======================================
+
+impl ArrayTag for NumericArrayDataType {
+    fn size_in_bytes(self) -> usize {
+        Self::size_in_bytes(&self)
+    }
+    fn name(self) -> &'static str {
+        Self::name(&self)
+    }
+    fn to_numeric_array_data_type(self) -> NumericArrayDataType {
+        self
+    }
+}
 
 /// Portable, owned [`NumericArray`][ref/NumericArray]<sub>WL</sub> value.
 ///
-/// Unlike [`wolfram_library_link::NumericArray<T>`][wll-na] which is a runtime-allocated
-/// handle, this type owns its byte buffer via `Arc<[u8]>`, has no runtime dependency,
-/// and can travel through serialization formats (WXF) freely.
+/// Type alias over [`ArrayBuf`] — see that struct for inherent methods (rank,
+/// element_count, dimensions, as_bytes, …). NumericArray-specific constructors
+/// (`from_slice`) and a typed slice view (`try_as_slice`) live on the inherent
+/// impl block below.
 ///
-/// Convert between the two via the `From` / `TryFrom` impls in `wolfram-library-link`.
+/// Convert between this and `wolfram_library_link::NumericArray<T>` via the
+/// `From` / `TryFrom` impls in `wolfram-library-link`.
 ///
 /// [ref/NumericArray]: https://reference.wolfram.com/language/ref/NumericArray.html
-/// [wll-na]: https://docs.rs/wolfram-library-link/latest/wolfram_library_link/struct.NumericArray.html
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct NumericArray {
-    data_type: NumericArrayDataType,
-    dimensions: Vec<usize>,
-    bytes: Arc<[u8]>,
-}
+pub type NumericArray = ArrayBuf<NumericArrayDataType>;
 
 impl NumericArray {
-    /// Construct from raw parts. The caller is responsible for ensuring
-    /// `bytes.len() == prod(dimensions) * data_type.size_in_bytes()`.
-    pub fn new(
-        data_type: NumericArrayDataType,
-        dimensions: Vec<usize>,
-        bytes: Arc<[u8]>,
-    ) -> Self {
-        debug_assert_eq!(
-            bytes.len(),
-            dimensions.iter().product::<usize>() * data_type.size_in_bytes(),
-            "NumericArray::new: byte buffer length does not match dims * element size"
-        );
-        NumericArray {
-            data_type,
-            dimensions,
-            bytes,
-        }
-    }
-
     /// Construct from a typed slice. The dimensions must satisfy
     /// `prod(dimensions) == slice.len()`.
     pub fn from_slice<T: NumericArrayElement>(dimensions: Vec<usize>, slice: &[T]) -> Self {
@@ -297,23 +288,22 @@ impl NumericArray {
                 std::mem::size_of_val(slice),
             )
         };
-        NumericArray {
-            data_type: T::TYPE,
-            dimensions,
-            bytes: Arc::from(bytes),
-        }
+        ArrayBuf::new(T::TYPE, dimensions, ByteArray::from(bytes))
     }
-}
 
-impl NumericArrayRead for NumericArray {
-    fn data_type(&self) -> NumericArrayDataType {
-        self.data_type
-    }
-    fn dimensions(&self) -> &[usize] {
-        &self.dimensions
-    }
-    fn as_bytes(&self) -> &[u8] {
-        &self.bytes
+    /// Try to view the buffer as a slice of `T`. Returns `None` if `T::TYPE` does
+    /// not match this array's [`data_type`][ArrayBuf::data_type].
+    pub fn try_as_slice<T: NumericArrayElement>(&self) -> Option<&[T]> {
+        if self.data_type() != T::TYPE {
+            return None;
+        }
+        let bytes = self.as_bytes();
+        let elem_size = std::mem::size_of::<T>();
+        debug_assert_eq!(bytes.len() % elem_size, 0);
+        // SAFETY: tag matches, byte buffer was constructed for this T.
+        Some(unsafe {
+            std::slice::from_raw_parts(bytes.as_ptr() as *const T, bytes.len() / elem_size)
+        })
     }
 }
 

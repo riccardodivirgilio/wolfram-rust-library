@@ -169,7 +169,7 @@ fn byte_array_semantic() {
     if !wolframscript_available() {
         return;
     }
-    let original = Expr::from(ByteArray::new(&[0u8, 1, 2, 0xff, 0x80]));
+    let original = Expr::from(ByteArray::from(vec![0u8, 1, 2, 0xff, 0x80]));
     let bytes_from_wl = wl_to_wxf("ByteArray[{0, 1, 2, 255, 128}]");
     let parsed = import(&bytes_from_wl, Format::Wxf).unwrap();
     assert_eq!(parsed, original);

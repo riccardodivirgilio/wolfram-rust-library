@@ -6,9 +6,7 @@
 //! consumer chooses to produce — the default consumer produces [`Expr`].
 
 use crate::Error;
-use wolfram_expr::{
-    Association, ByteArray, Expr, NumericArray, PackedArray, RuleEntry, Symbol,
-};
+use wolfram_expr::{Association, Expr, NumericArray, PackedArray, RuleEntry, Symbol};
 
 #[cfg(feature = "bignum")]
 use wolfram_expr::{BigInteger, BigReal};
@@ -87,7 +85,7 @@ impl WolframConsumer for ExprConsumer {
     }
 
     fn consume_byte_array(&mut self, bytes: Vec<u8>) -> Result<Expr, Error> {
-        Ok(Expr::from(ByteArray::from_vec(bytes)))
+        Ok(Expr::from(bytes))
     }
 
     fn consume_function(&mut self, head: Expr, args: Vec<Expr>) -> Result<Expr, Error> {

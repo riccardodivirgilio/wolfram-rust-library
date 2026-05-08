@@ -1,7 +1,7 @@
 use crate::symbol::{ContextRef, RelativeContext, SymbolNameRef, SymbolRef};
 use crate::{
-    Association, ByteArray, Expr, ExprKind, NumericArray, NumericArrayDataType,
-    NumericArrayRead, PackedArray, PackedArrayDataType, Symbol,
+    Association, ByteArray, Expr, ExprKind, NumericArray, NumericArrayDataType, PackedArray,
+    PackedArrayDataType, Symbol,
 };
 
 /// `(input, is Symbol, is SymbolName, is Context, is RelativeContext)`
@@ -60,7 +60,7 @@ pub fn test_symbol_like_parsing() {
 
 #[test]
 fn byte_array_variant_roundtrip() {
-    let ba = ByteArray::new(&[0x01, 0x02, 0x03, 0xff]);
+    let ba = ByteArray::from(vec![0x01, 0x02, 0x03, 0xff]);
     let expr = Expr::from(ba.clone());
     assert!(matches!(expr.kind(), ExprKind::ByteArray(_)));
     assert_eq!(expr.try_as_byte_array(), Some(&ba));
@@ -115,7 +115,7 @@ fn new_variants_have_no_tag() {
 
     // Atom-like new variants → no tag (matching the existing convention for
     // Integer/Real/String, which also return None).
-    let ba = Expr::from(ByteArray::new(&[1, 2, 3]));
+    let ba = Expr::from(ByteArray::from(vec![1, 2, 3]));
     let na = Expr::from(NumericArray::from_slice::<i64>(vec![3], &[1, 2, 3]));
     let pa = Expr::from(PackedArray::from_slice::<i64>(vec![3], &[1, 2, 3]));
     let assoc = Expr::from(Association::new());
@@ -127,7 +127,7 @@ fn new_variants_have_no_tag() {
 
 #[test]
 fn new_variants_have_no_normal_head() {
-    let ba = Expr::from(ByteArray::new(&[]));
+    let ba = Expr::from(ByteArray::new());
     let na = Expr::from(NumericArray::from_slice::<u8>(vec![0], &[]));
     assert!(ba.normal_head().is_none());
     assert!(na.normal_head().is_none());
@@ -135,7 +135,7 @@ fn new_variants_have_no_normal_head() {
 
 #[test]
 fn display_of_new_variants_is_non_empty() {
-    let ba = Expr::from(ByteArray::new(&[0xab]));
+    let ba = Expr::from(ByteArray::from(vec![0xab]));
     let assoc = {
         let mut a = Association::new();
         a.insert(Expr::from("k"), Expr::from(1));

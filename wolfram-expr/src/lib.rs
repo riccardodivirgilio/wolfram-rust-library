@@ -3,6 +3,7 @@
 #![allow(clippy::let_and_return)]
 #![warn(missing_docs)]
 
+mod array_buf;
 mod association;
 mod byte_array;
 mod conversion;
@@ -33,10 +34,11 @@ use std::sync::Arc;
 #[doc(inline)]
 pub use self::symbol::Symbol;
 
+pub use self::array_buf::{ArrayBuf, ArrayTag};
 pub use self::association::{Association, RuleEntry};
 pub use self::byte_array::ByteArray;
 pub use self::numeric_array::{
-    NumericArray, NumericArrayDataType, NumericArrayRead, NumericArrayElement,
+    NumericArray, NumericArrayDataType, NumericArrayElement, NumericArrayRead,
 };
 pub use self::packed_array::{PackedArray, PackedArrayDataType, PackedArrayElement};
 
@@ -449,7 +451,7 @@ impl fmt::Display for ExprKind {
             // strings; for guaranteed-roundtripping textual output use
             // wolfram-serializer's WlSerializer. -----
             ExprKind::ByteArray(ref ba) => {
-                write!(f, "ByteArray[{:?}]", ba.as_bytes())
+                write!(f, "ByteArray[{:?}]", ba.as_slice())
             },
             ExprKind::Association(ref assoc) => {
                 write!(f, "<|")?;

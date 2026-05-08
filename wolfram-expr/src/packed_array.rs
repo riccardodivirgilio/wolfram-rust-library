@@ -11,9 +11,9 @@
 //!
 //! [ref/PackedArray]: https://reference.wolfram.com/language/ref/Developer/PackedArrayQ.html
 
-use std::sync::Arc;
-
-use crate::numeric_array::NumericArrayRead;
+use crate::array_buf::{ArrayBuf, ArrayTag};
+use crate::ByteArray;
+use crate::NumericArrayDataType;
 
 /// Element-type tag for a [`PackedArray`].
 ///
@@ -101,34 +101,41 @@ impl PackedArrayElement for f64 {
     const TYPE: PackedArrayDataType = PackedArrayDataType::Real64;
 }
 
-/// Owned [`PackedArray`][ref/PackedArray]<sub>WL</sub> value.
-///
-/// [ref/PackedArray]: https://reference.wolfram.com/language/ref/Developer/PackedArrayQ.html
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct PackedArray {
-    data_type: PackedArrayDataType,
-    dimensions: Vec<usize>,
-    bytes: Arc<[u8]>,
-}
-
-impl PackedArray {
-    /// Construct from raw parts.
-    pub fn new(
-        data_type: PackedArrayDataType,
-        dimensions: Vec<usize>,
-        bytes: Arc<[u8]>,
-    ) -> Self {
-        debug_assert_eq!(
-            bytes.len(),
-            dimensions.iter().product::<usize>() * data_type.size_in_bytes(),
-        );
-        PackedArray {
-            data_type,
-            dimensions,
-            bytes,
+impl ArrayTag for PackedArrayDataType {
+    fn size_in_bytes(self) -> usize {
+        Self::size_in_bytes(&self)
+    }
+    fn name(self) -> &'static str {
+        Self::name(&self)
+    }
+    fn to_numeric_array_data_type(self) -> NumericArrayDataType {
+        // PackedArray's element types are a strict subset of NumericArray's —
+        // the conversion is lossless.
+        match self {
+            PackedArrayDataType::Integer8 => NumericArrayDataType::Bit8,
+            PackedArrayDataType::Integer16 => NumericArrayDataType::Bit16,
+            PackedArrayDataType::Integer32 => NumericArrayDataType::Bit32,
+            PackedArrayDataType::Integer64 => NumericArrayDataType::Bit64,
+            PackedArrayDataType::Real32 => NumericArrayDataType::Real32,
+            PackedArrayDataType::Real64 => NumericArrayDataType::Real64,
+            PackedArrayDataType::ComplexReal32 => NumericArrayDataType::ComplexReal32,
+            PackedArrayDataType::ComplexReal64 => NumericArrayDataType::ComplexReal64,
         }
     }
+}
 
+/// Owned [`PackedArray`][ref/PackedArray]<sub>WL</sub> value.
+///
+/// Type alias over [`ArrayBuf`] — see that struct for inherent methods (rank,
+/// element_count, dimensions, as_bytes, …). PackedArray-specific constructors
+/// (`from_slice`) and a typed slice view (`try_as_slice`) live below. The
+/// [`NumericArrayRead`][crate::NumericArrayRead] trait impl from `ArrayBuf`
+/// auto-bridges PackedArray into the unified read API.
+///
+/// [ref/PackedArray]: https://reference.wolfram.com/language/ref/Developer/PackedArrayQ.html
+pub type PackedArray = ArrayBuf<PackedArrayDataType>;
+
+impl PackedArray {
     /// Construct from a typed slice.
     pub fn from_slice<T: PackedArrayElement>(dimensions: Vec<usize>, slice: &[T]) -> Self {
         assert_eq!(dimensions.iter().product::<usize>(), slice.len());
@@ -138,79 +145,20 @@ impl PackedArray {
                 std::mem::size_of_val(slice),
             )
         };
-        PackedArray {
-            data_type: T::TYPE,
-            dimensions,
-            bytes: Arc::from(bytes),
-        }
-    }
-
-    /// The element type.
-    pub fn data_type(&self) -> PackedArrayDataType {
-        self.data_type
-    }
-
-    /// Multi-dimensional shape.
-    pub fn dimensions(&self) -> &[usize] {
-        &self.dimensions
-    }
-
-    /// Raw byte buffer.
-    pub fn as_bytes(&self) -> &[u8] {
-        &self.bytes
-    }
-
-    /// Number of dimensions.
-    pub fn rank(&self) -> usize {
-        self.dimensions.len()
-    }
-
-    /// Total element count.
-    pub fn element_count(&self) -> usize {
-        self.dimensions.iter().product()
+        ArrayBuf::new(T::TYPE, dimensions, ByteArray::from(bytes))
     }
 
     /// Try to view the buffer as a slice of `T`. Returns `None` on type-tag mismatch.
     pub fn try_as_slice<T: PackedArrayElement>(&self) -> Option<&[T]> {
-        if self.data_type != T::TYPE {
+        if self.data_type() != T::TYPE {
             return None;
         }
+        let bytes = self.as_bytes();
         let elem_size = std::mem::size_of::<T>();
-        debug_assert_eq!(self.bytes.len() % elem_size, 0);
+        debug_assert_eq!(bytes.len() % elem_size, 0);
         Some(unsafe {
-            std::slice::from_raw_parts(
-                self.bytes.as_ptr() as *const T,
-                self.bytes.len() / elem_size,
-            )
+            std::slice::from_raw_parts(bytes.as_ptr() as *const T, bytes.len() / elem_size)
         })
-    }
-}
-
-/// Implementation note: `PackedArray` reuses the structural shape of [`NumericArrayRead`]
-/// for its compatible types but doesn't share the trait directly because the type tags
-/// differ. For uniform read-side polymorphism, use the inherent methods.
-///
-/// Bridge to `NumericArrayRead` when the packed type happens to fit numeric-array semantics:
-impl NumericArrayRead for PackedArray {
-    fn data_type(&self) -> crate::NumericArrayDataType {
-        // Bridge: PackedArray → NumericArrayDataType for unified read API.
-        // Lossless because every PackedArrayDataType has a NumericArrayDataType analog.
-        match self.data_type {
-            PackedArrayDataType::Integer8 => crate::NumericArrayDataType::Bit8,
-            PackedArrayDataType::Integer16 => crate::NumericArrayDataType::Bit16,
-            PackedArrayDataType::Integer32 => crate::NumericArrayDataType::Bit32,
-            PackedArrayDataType::Integer64 => crate::NumericArrayDataType::Bit64,
-            PackedArrayDataType::Real32 => crate::NumericArrayDataType::Real32,
-            PackedArrayDataType::Real64 => crate::NumericArrayDataType::Real64,
-            PackedArrayDataType::ComplexReal32 => crate::NumericArrayDataType::ComplexReal32,
-            PackedArrayDataType::ComplexReal64 => crate::NumericArrayDataType::ComplexReal64,
-        }
-    }
-    fn dimensions(&self) -> &[usize] {
-        &self.dimensions
-    }
-    fn as_bytes(&self) -> &[u8] {
-        &self.bytes
     }
 }
 
@@ -223,6 +171,7 @@ impl<T: PackedArrayElement> From<(Vec<usize>, &[T])> for PackedArray {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::NumericArrayRead;
 
     #[test]
     fn from_slice_basic() {
