@@ -10,76 +10,49 @@
 //!
 //! [`NumericArray`]: crate::NumericArray
 
+/// Generic complex number — pair of identical scalars `(re, im)` with
+/// C-compatible interleaved layout. Use the [`Complex64`] / [`Complex32`]
+/// aliases in code; this generic exists so the impl block and layout
+/// invariants are written once.
+#[repr(C)]
+#[derive(Debug, Copy, Clone, PartialEq, Default)]
+pub struct Complex<F> {
+    /// Real part.
+    pub re: F,
+    /// Imaginary part.
+    pub im: F,
+}
+
+impl<F> Complex<F> {
+    /// Construct from `(real, imaginary)` parts.
+    pub const fn new(re: F, im: F) -> Self {
+        Complex { re, im }
+    }
+}
+
+impl<F: Copy> Complex<F> {
+    /// Real part.
+    pub const fn re(self) -> F {
+        self.re
+    }
+    /// Imaginary part.
+    pub const fn im(self) -> F {
+        self.im
+    }
+}
+
 /// Single 64-bit complex number — pair of `f64` (real, imaginary).
 ///
 /// Layout matches the C ABI `_Complex double` and the WXF `ComplexReal64`
 /// element wire format. `wolfram-library-link-sys::mcomplex` is `pub use`'d as
 /// an alias for this type, so `wll::NumericArray<sys::mcomplex>` and
 /// `wll::NumericArray<wolfram_expr::Complex64>` are the same instantiation.
-#[repr(C)]
-#[derive(Debug, Copy, Clone, PartialEq)]
-pub struct Complex64 {
-    /// Real part.
-    pub re: f64,
-    /// Imaginary part.
-    pub im: f64,
-}
-
-impl Complex64 {
-    /// Construct from `(real, imaginary)` parts.
-    pub const fn new(re: f64, im: f64) -> Self {
-        Complex64 { re, im }
-    }
-
-    /// Real part.
-    pub const fn re(self) -> f64 {
-        self.re
-    }
-    /// Imaginary part.
-    pub const fn im(self) -> f64 {
-        self.im
-    }
-}
-
-impl Default for Complex64 {
-    fn default() -> Self {
-        Complex64 { re: 0.0, im: 0.0 }
-    }
-}
+pub type Complex64 = Complex<f64>;
 
 /// Single 32-bit complex number — pair of `f32` (real, imaginary). Layout matches
 /// the WXF `ComplexReal32` element wire format. No `_Complex float` typedef
 /// exists in `WolframLibrary.h`, so this type is wolfram-expr-only.
-#[repr(C)]
-#[derive(Debug, Copy, Clone, PartialEq)]
-pub struct Complex32 {
-    /// Real part.
-    pub re: f32,
-    /// Imaginary part.
-    pub im: f32,
-}
-
-impl Complex32 {
-    /// Construct from `(real, imaginary)` parts.
-    pub const fn new(re: f32, im: f32) -> Self {
-        Complex32 { re, im }
-    }
-
-    /// Real part.
-    pub const fn re(self) -> f32 {
-        self.re
-    }
-    /// Imaginary part.
-    pub const fn im(self) -> f32 {
-        self.im
-    }
-}
-
-impl Default for Complex32 {
-    fn default() -> Self {
-        Complex32 { re: 0.0, im: 0.0 }
-    }
-}
+pub type Complex32 = Complex<f32>;
 
 #[cfg(test)]
 mod tests {
