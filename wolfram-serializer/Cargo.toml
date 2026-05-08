@@ -16,3 +16,6 @@ bignum = ["wolfram-expr/bignum"]
 
 [dependencies]
 wolfram-expr = { version = "0.2", path = "../wolfram-expr" }
+# zlib for the optional WXF compressed payload (`8C:` header). Pure-Rust backend
+# so we don't pull a C zlib build into the dep graph.
+flate2 = { version = "1.0", default-features = false, features = ["rust_backend"] }

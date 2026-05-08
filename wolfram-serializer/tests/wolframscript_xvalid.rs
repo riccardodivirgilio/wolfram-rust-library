@@ -242,6 +242,44 @@ fn import_struct_check() {
     assert_eq!(parsed, expected);
 }
 
+#[test]
+fn compressed_xvalid() {
+    // Wolfram serializes a compressible expression with PerformanceGoal -> "Size"
+    // (which produces an `8C:` header), and we deserialize it transparently.
+    if !wolframscript_available() {
+        return;
+    }
+    let pid = std::process::id();
+    let path = std::env::temp_dir().join(format!("wxf_compressed_{}.bin", pid));
+    let script = format!(
+        r#"BinaryWrite["{}", Normal @ BinarySerialize[Range[100], PerformanceGoal -> "Size"]]; Close["{}"];"#,
+        path.display(),
+        path.display()
+    );
+    let out = Command::new("wolframscript")
+        .args(["-code", &script])
+        .output()
+        .unwrap();
+    assert!(out.status.success(), "wolframscript failed");
+    let bytes = std::fs::read(&path).unwrap();
+    let _ = std::fs::remove_file(&path);
+    assert_eq!(&bytes[..3], b"8C:", "Wolfram should produce a compressed header");
+
+    // We deserialize it. Wolfram size-optimizes Range[100] into a PackedArray
+    // of Integer8, so what we get back is `PackedArray[…, Integer8]` containing
+    // bytes 1..=100 — proving both decompression *and* PackedArray decoding work.
+    let parsed: Expr = wolfram_serializer::import(&bytes, Format::Wxf)
+        .expect("import compressed WXF from wolfram");
+    let arr = parsed
+        .try_as_packed_array()
+        .expect("expected PackedArray from Range[100]");
+    assert_eq!(arr.dimensions(), &[100]);
+    assert_eq!(
+        arr.try_as_slice::<i8>(),
+        Some((1..=100i8).collect::<Vec<_>>().as_slice())
+    );
+}
+
 // Suppress unused-import warning when wolframscript is not available
 #[allow(dead_code)]
 fn _unused() {

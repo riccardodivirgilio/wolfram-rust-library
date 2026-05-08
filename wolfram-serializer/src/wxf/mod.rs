@@ -6,18 +6,48 @@ pub mod varint;
 
 use std::io::Write;
 
+use flate2::write::ZlibEncoder;
+use flate2::Compression;
 use wolfram_expr::{NumericArray, NumericArrayRead, PackedArray};
 
 #[cfg(feature = "bignum")]
 use wolfram_expr::{BigInteger, BigReal};
 
 use crate::serializer::{Serializer, ToWolfram};
-use crate::Error;
+use crate::{CompressionLevel, Error};
 
 use self::constants::*;
 use self::varint::write_varint;
 
 pub use self::deserialize::deserialize;
+
+/// Serialize `value` with a `8C:` (zlib-compressed) WXF header.
+///
+/// Lays out the header bytes directly to `writer`, then wraps `writer` in a
+/// [`ZlibEncoder`] for the payload — the WXF token stream is written through
+/// the encoder uncompressed-side and emerges deflated on the wire-side.
+pub fn serialize_compressed<T, W>(
+    value: &T,
+    writer: &mut W,
+    level: CompressionLevel,
+) -> Result<(), Error>
+where
+    T: ToWolfram + ?Sized,
+    W: Write,
+{
+    // Header: `8C:` — version 8, compression marker, separator.
+    writer.write_all(&[WXF_VERSION, WXF_HEADER_COMPRESS, WXF_HEADER_SEPARATOR])?;
+
+    let mut encoder = ZlibEncoder::new(writer, Compression::new(u32::from(level.to_u8())));
+    {
+        // Inside the encoder, write the WXF token payload — but with NO header
+        // (header was already emitted to the underlying writer above).
+        let mut s = WxfSerializer::without_header(&mut encoder);
+        value.serialize(&mut s)?;
+    }
+    encoder.finish()?;
+    Ok(())
+}
 
 /// WXF binary serializer. Wraps any [`Write`] sink.
 pub struct WxfSerializer<'w, W: Write> {
@@ -29,6 +59,13 @@ impl<'w, W: Write> WxfSerializer<'w, W> {
     pub fn new(writer: &'w mut W) -> Result<Self, Error> {
         writer.write_all(&[WXF_VERSION, WXF_HEADER_SEPARATOR])?;
         Ok(WxfSerializer { out: writer })
+    }
+
+    /// Construct without writing a header. Used when the caller has already
+    /// written its own header (e.g. the compressed-payload path emits `8C:`
+    /// outside the zlib stream and only wants the token payload encoded inside).
+    pub(crate) fn without_header(writer: &'w mut W) -> Self {
+        WxfSerializer { out: writer }
     }
 }
 

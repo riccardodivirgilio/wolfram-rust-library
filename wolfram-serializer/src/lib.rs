@@ -25,12 +25,42 @@ pub use crate::consumer::{ExprConsumer, WolframConsumer};
 pub use crate::serializer::{Serializer, ToWolfram};
 
 /// Output format selector for [`export`] / [`import`].
+///
+/// `import` only needs `Format::Wxf` — the WXF wire header (`8:` vs `8C:`)
+/// self-describes whether the payload is compressed, so deserialization
+/// transparently auto-detects.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub enum Format {
     /// Wolfram Language `InputForm` (UTF-8 text). Export-only in V1.
     Wl,
-    /// WXF binary wire format. Round-trippable.
+    /// WXF binary wire format, uncompressed (`8:` header).
     Wxf,
+    /// WXF binary wire format, zlib-compressed (`8C:` header) at the given level.
+    WxfCompressed(CompressionLevel),
+}
+
+/// zlib compression level used by [`Format::WxfCompressed`].
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+pub enum CompressionLevel {
+    /// zlib level 1 — fastest, lowest ratio.
+    Fastest,
+    /// zlib level 6 — balanced (zlib default; matches `BinarySerialize[…, PerformanceGoal -> "Size"]`).
+    Default,
+    /// zlib level 9 — slowest, highest ratio.
+    Best,
+    /// Explicit zlib level. Values above 9 are clamped to 9.
+    Level(u8),
+}
+
+impl CompressionLevel {
+    pub(crate) fn to_u8(self) -> u8 {
+        match self {
+            CompressionLevel::Fastest => 1,
+            CompressionLevel::Default => 6,
+            CompressionLevel::Best => 9,
+            CompressionLevel::Level(n) => n.min(9),
+        }
+    }
 }
 
 /// Errors returned by [`export`] / [`import`].
@@ -101,6 +131,7 @@ where
             let mut s = wxf::WxfSerializer::new(writer)?;
             value.serialize(&mut s)
         }
+        Format::WxfCompressed(level) => wxf::serialize_compressed(value, writer, level),
     }
 }
 
@@ -123,6 +154,8 @@ pub fn import_with<C: WolframConsumer>(
 ) -> Result<C::Value, Error> {
     match format {
         Format::Wl => Err(Error::UnsupportedImportFormat),
-        Format::Wxf => wxf::deserialize(bytes, consumer),
+        // The wire header (`8:` vs `8C:`) self-describes whether the payload is
+        // compressed, so both variants route through the same deserializer.
+        Format::Wxf | Format::WxfCompressed(_) => wxf::deserialize(bytes, consumer),
     }
 }

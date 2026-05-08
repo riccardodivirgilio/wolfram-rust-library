@@ -3,6 +3,8 @@
 
 use std::io::{Cursor, Read};
 
+use flate2::read::ZlibDecoder;
+
 use wolfram_expr::{NumericArray, PackedArray, PackedArrayDataType};
 
 #[cfg(feature = "bignum")]
@@ -29,9 +31,19 @@ pub fn deserialize<C: WolframConsumer>(bytes: &[u8], c: &mut C) -> Result<C::Val
         )));
     }
     if header[1] == WXF_HEADER_COMPRESS {
-        return Err(Error::InvalidWxf(
-            "WXF compressed payloads are not supported in V1".into(),
-        ));
+        // Compressed payload: header is `8C:` — consume the trailing `:`, then
+        // wrap the rest of the stream in a zlib decoder and parse one token.
+        let mut sep = [0u8; 1];
+        cur.read_exact(&mut sep)
+            .map_err(|_| Error::InvalidWxf("WXF compressed header truncated".into()))?;
+        if sep[0] != WXF_HEADER_SEPARATOR {
+            return Err(Error::InvalidWxf(format!(
+                "WXF compressed header: expected ':' after 'C', got {:?}",
+                sep[0] as char
+            )));
+        }
+        let mut decoder = ZlibDecoder::new(cur);
+        return parse_one(&mut decoder, c);
     }
     if header[1] != WXF_HEADER_SEPARATOR {
         return Err(Error::InvalidWxf(format!(

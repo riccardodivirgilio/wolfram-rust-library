@@ -4,7 +4,7 @@ use wolfram_expr::{
     Association, ByteArray, Complex32, Complex64, Expr, NumericArray, NumericArrayDataType,
     PackedArray, PackedArrayDataType, Symbol,
 };
-use wolfram_serializer::{export, import, Format};
+use wolfram_serializer::{export, import, CompressionLevel, Format};
 
 fn roundtrip(expr: Expr) {
     let bytes = export(&expr, Format::Wxf).expect("export Wxf");
@@ -216,4 +216,69 @@ fn big_real_roundtrip() {
     use wolfram_expr::BigReal;
     let r = BigReal::new("3.14159265358979323846`50.");
     roundtrip(Expr::from(r));
+}
+
+//==============================================================================
+// Compressed WXF (8C: header)
+//==============================================================================
+
+/// Build a sufficiently-compressible expression: a List of repeated symbols.
+fn compressible_expr() -> Expr {
+    Expr::list(
+        (0..100)
+            .map(|_| Expr::symbol(Symbol::new("System`x")))
+            .collect(),
+    )
+}
+
+#[test]
+fn compressed_header_is_8c_colon() {
+    let expr = compressible_expr();
+    let bytes = export(&expr, Format::WxfCompressed(CompressionLevel::Default)).unwrap();
+    assert_eq!(&bytes[..3], b"8C:", "compressed header should start with 8C:");
+}
+
+#[test]
+fn compressed_payload_is_smaller() {
+    let expr = compressible_expr();
+    let plain = export(&expr, Format::Wxf).unwrap();
+    let compressed =
+        export(&expr, Format::WxfCompressed(CompressionLevel::Default)).unwrap();
+    assert!(
+        compressed.len() < plain.len(),
+        "compressed ({} B) should be smaller than plain ({} B)",
+        compressed.len(),
+        plain.len()
+    );
+}
+
+#[test]
+fn compressed_roundtrips_at_every_level() {
+    let expr = compressible_expr();
+    for level in [
+        CompressionLevel::Fastest,
+        CompressionLevel::Default,
+        CompressionLevel::Best,
+        CompressionLevel::Level(0),
+        CompressionLevel::Level(9),
+        CompressionLevel::Level(42), // clamps to 9
+    ] {
+        let bytes = export(&expr, Format::WxfCompressed(level)).unwrap();
+        // import auto-detects the 8C: header — no separate format needed.
+        let parsed: Expr = import(&bytes, Format::Wxf).unwrap();
+        assert_eq!(parsed, expr, "roundtrip mismatch at level {:?}", level);
+    }
+}
+
+#[test]
+fn compressed_and_plain_decode_equally() {
+    let expr = compressible_expr();
+    let plain_bytes = export(&expr, Format::Wxf).unwrap();
+    let compressed_bytes =
+        export(&expr, Format::WxfCompressed(CompressionLevel::Default)).unwrap();
+
+    let from_plain: Expr = import(&plain_bytes, Format::Wxf).unwrap();
+    let from_compressed: Expr = import(&compressed_bytes, Format::Wxf).unwrap();
+    assert_eq!(from_plain, from_compressed);
+    assert_eq!(from_plain, expr);
 }
