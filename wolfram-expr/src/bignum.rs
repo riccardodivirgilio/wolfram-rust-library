@@ -16,37 +16,39 @@
 //! This keeps `wolfram-expr` dependency-free with respect to bignum crates —
 //! arithmetic is a higher-level concern.
 
-/// Wolfram Language `BigInteger` — arbitrary-precision integer carried as its
-/// textual decimal representation (e.g. `"99999999999999999999999"`).
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct BigInteger(pub String);
+/// Declare a string-newtype Big* number type. The variants are nominally
+/// distinct (so `Expr::from(BigInteger)` and `Expr::from(BigReal)` dispatch to
+/// different `ExprKind` variants and different WXF tokens) but their impls are
+/// identical — the macro keeps them in lockstep.
+macro_rules! declare_big_number {
+    ($(#[$attr:meta])* $name:ident) => {
+        $(#[$attr])*
+        #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+        pub struct $name(pub String);
 
-impl BigInteger {
-    /// Construct from any string-like value containing the decimal digits.
-    pub fn new(digits: impl Into<String>) -> Self {
-        BigInteger(digits.into())
-    }
+        impl $name {
+            #[doc = concat!("Construct a `", stringify!($name), "` from any string-like value.")]
+            pub fn new(digits: impl Into<String>) -> Self {
+                $name(digits.into())
+            }
 
-    /// The underlying digit string, e.g. `"-123"` or `"99999999999999999999"`.
-    pub fn as_str(&self) -> &str {
-        &self.0
-    }
+            /// The underlying textual representation, preserved verbatim from the wire.
+            pub fn as_str(&self) -> &str {
+                &self.0
+            }
+        }
+    };
 }
 
-/// Wolfram Language `BigReal` — arbitrary-precision real carried as its WL
-/// textual representation, including any precision/accuracy markers
-/// (e.g. `"3.14159265358979323846`50."`).
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct BigReal(pub String);
+declare_big_number! {
+    /// Wolfram Language `BigInteger` — arbitrary-precision integer carried as its
+    /// textual decimal representation (e.g. `"99999999999999999999999"`).
+    BigInteger
+}
 
-impl BigReal {
-    /// Construct from any string-like value containing the WL textual representation.
-    pub fn new(digits: impl Into<String>) -> Self {
-        BigReal(digits.into())
-    }
-
-    /// The underlying digit string with any precision/accuracy markers preserved.
-    pub fn as_str(&self) -> &str {
-        &self.0
-    }
+declare_big_number! {
+    /// Wolfram Language `BigReal` — arbitrary-precision real carried as its WL
+    /// textual representation, including any precision/accuracy markers
+    /// (e.g. `"3.14159265358979323846`50."`).
+    BigReal
 }
