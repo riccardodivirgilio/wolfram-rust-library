@@ -68,19 +68,19 @@ impl PackedArrayDataType {
         self.0
     }
 
-    /// Wolfram Language name (e.g. `"Integer32"`, `"Real64"`). Delegates to
-    /// [`NumericArrayDataType::name`].
+    /// Wolfram Language name (e.g. `"Integer32"`, `"Real64"`). Forwards to
+    /// [`NumericArrayDataType::name`] — the canonical match body lives there.
     pub fn name(&self) -> &'static str {
         self.0.name()
     }
 
-    /// Element size in bytes. Delegates to [`NumericArrayDataType::size_in_bytes`].
+    /// Element size in bytes. Forwards to [`NumericArrayDataType::size_in_bytes`].
     pub fn size_in_bytes(&self) -> usize {
         self.0.size_in_bytes()
     }
 
-    /// Inverse of [`name`][Self::name]. Returns `None` for unknown strings or for
-    /// names that resolve to a non-packed-compatible variant.
+    /// Inverse of [`NumericArrayDataType::name`]. Returns `None` for unknown
+    /// strings or for names that resolve to a non-packed-compatible variant.
     pub fn from_name(s: &str) -> Option<Self> {
         Self::try_new(NumericArrayDataType::from_name(s)?)
     }
@@ -121,15 +121,10 @@ impl ArrayElement<PackedArrayDataType> for crate::complex::Complex32 { const TAG
 impl ArrayElement<PackedArrayDataType> for crate::complex::Complex64 { const TAG: PackedArrayDataType = PackedArrayDataType::ComplexReal64; }
 
 impl ArrayTag for PackedArrayDataType {
-    fn size_in_bytes(self) -> usize {
-        self.0.size_in_bytes()
-    }
-    fn name(self) -> &'static str {
-        self.0.name()
-    }
     fn to_numeric_array_data_type(self) -> NumericArrayDataType {
         self.0
     }
+    // size_in_bytes / name come from ArrayTag's defaults.
 }
 
 /// Owned [`PackedArray`][ref/PackedArray]<sub>WL</sub> value.

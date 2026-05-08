@@ -13,19 +13,31 @@ use crate::{ByteArray, NumericArrayDataType, NumericArrayRead};
 
 /// Element-type tag carried by an [`ArrayBuf`]. Implemented by
 /// [`NumericArrayDataType`] and [`PackedArrayDataType`][crate::PackedArrayDataType].
+///
+/// Concrete impls only need to provide [`Self::to_numeric_array_data_type`] —
+/// the canonical bodies for [`Self::name`] and [`Self::size_in_bytes`] live on
+/// [`NumericArrayDataType`]'s inherent methods, and the default impls below
+/// route every tag through that single source of truth.
 pub trait ArrayTag:
     Copy + Eq + Ord + Hash + 'static + std::fmt::Debug + Send + Sync
 {
-    /// Bytes per element (1, 2, 4, 8, or 16).
-    fn size_in_bytes(self) -> usize;
-
-    /// Wolfram Language type name (e.g. `"Integer32"`, `"Real64"`).
-    fn name(self) -> &'static str;
-
     /// Convert to a [`NumericArrayDataType`] — always lossless: PackedArray's
     /// element types are a strict subset of NumericArray's, and for NumericArray
     /// itself the conversion is the identity.
     fn to_numeric_array_data_type(self) -> NumericArrayDataType;
+
+    /// Bytes per element (1, 2, 4, 8, or 16).
+    fn size_in_bytes(self) -> usize {
+        // Qualified call to the inherent method on NumericArrayDataType — without
+        // this, `self.to_numeric_array_data_type().size_in_bytes()` would resolve
+        // back to *this* trait method in the generic context and recurse forever.
+        NumericArrayDataType::size_in_bytes(&self.to_numeric_array_data_type())
+    }
+
+    /// Wolfram Language type name (e.g. `"Integer32"`, `"Real64"`).
+    fn name(self) -> &'static str {
+        NumericArrayDataType::name(&self.to_numeric_array_data_type())
+    }
 }
 
 /// Sealed marker for Rust primitives valid as an array element. The set is

@@ -235,15 +235,13 @@ pub trait NumericArrayRead {
 //======================================
 
 impl ArrayTag for NumericArrayDataType {
-    fn size_in_bytes(self) -> usize {
-        Self::size_in_bytes(&self)
-    }
-    fn name(self) -> &'static str {
-        Self::name(&self)
-    }
     fn to_numeric_array_data_type(self) -> NumericArrayDataType {
         self
     }
+    // size_in_bytes / name come from ArrayTag's default bodies, which delegate
+    // back through to_numeric_array_data_type to NumericArrayDataType's inherent
+    // methods — no risk of recursion since auto-ref picks the inherent &self
+    // signature over the trait's by-value one.
 }
 
 /// Portable, owned [`NumericArray`][ref/NumericArray]<sub>WL</sub> value.
