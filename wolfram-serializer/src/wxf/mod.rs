@@ -8,7 +8,7 @@ use std::io::Write;
 
 use flate2::write::ZlibEncoder;
 use flate2::Compression;
-use wolfram_expr::{NumericArray, NumericArrayRead, PackedArray};
+use wolfram_expr::{NumericArrayDataType, PackedArrayDataType};
 
 #[cfg(feature = "bignum")]
 use wolfram_expr::{BigInteger, BigReal};
@@ -145,28 +145,46 @@ impl<'w, W: Write> Serializer for WxfSerializer<'w, W> {
         Ok(())
     }
 
-    fn serialize_numeric_array(&mut self, arr: &NumericArray) -> Result<(), Error> {
+    fn serialize_numeric_array(
+        &mut self,
+        data_type: NumericArrayDataType,
+        dimensions: &[usize],
+        bytes: &[u8],
+    ) -> Result<(), Error> {
         self.out.write_all(&[TOKEN_NUMERIC_ARRAY])?;
-        self.out.write_all(&[array_type_to_wxf(arr.data_type())])?;
-        let dims = arr.dimensions();
-        write_varint(self.out, dims.len() as u64)?;
-        for d in dims {
+        self.out.write_all(&[array_type_to_wxf(data_type)])?;
+        write_varint(self.out, dimensions.len() as u64)?;
+        for d in dimensions {
             write_varint(self.out, *d as u64)?;
         }
-        self.out.write_all(arr.as_bytes())?;
+        self.out.write_all(bytes)?;
         Ok(())
     }
 
-    fn serialize_packed_array(&mut self, arr: &PackedArray) -> Result<(), Error> {
+    fn serialize_packed_array(
+        &mut self,
+        data_type: PackedArrayDataType,
+        dimensions: &[usize],
+        bytes: &[u8],
+    ) -> Result<(), Error> {
         self.out.write_all(&[TOKEN_PACKED_ARRAY])?;
-        let dt = NumericArrayRead::data_type(arr);
-        self.out.write_all(&[array_type_to_wxf(dt)])?;
-        let dims = arr.dimensions();
-        write_varint(self.out, dims.len() as u64)?;
-        for d in dims {
+        // Bridge PackedArrayDataType → NumericArrayDataType for the wire byte.
+        let na_dt: NumericArrayDataType = match data_type {
+            PackedArrayDataType::Integer8 => NumericArrayDataType::Bit8,
+            PackedArrayDataType::Integer16 => NumericArrayDataType::Bit16,
+            PackedArrayDataType::Integer32 => NumericArrayDataType::Bit32,
+            PackedArrayDataType::Integer64 => NumericArrayDataType::Bit64,
+            PackedArrayDataType::Real32 => NumericArrayDataType::Real32,
+            PackedArrayDataType::Real64 => NumericArrayDataType::Real64,
+            PackedArrayDataType::ComplexReal32 => NumericArrayDataType::ComplexReal32,
+            PackedArrayDataType::ComplexReal64 => NumericArrayDataType::ComplexReal64,
+        };
+        self.out.write_all(&[array_type_to_wxf(na_dt)])?;
+        write_varint(self.out, dimensions.len() as u64)?;
+        for d in dimensions {
             write_varint(self.out, *d as u64)?;
         }
-        self.out.write_all(arr.as_bytes())?;
+        self.out.write_all(bytes)?;
         Ok(())
     }
 

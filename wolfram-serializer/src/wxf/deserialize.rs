@@ -105,14 +105,17 @@ fn parse_one<R: Read, C: WolframConsumer>(r: &mut R, c: &mut C) -> Result<C::Val
         TOKEN_STRING => {
             let len = read_varint(r)? as usize;
             let bytes = read_exact_n(r, len)?;
-            let s = std::str::from_utf8(&bytes)
+            // String::from_utf8 consumes the Vec<u8> into a String with no copy
+            // (the buffer is reused). consume_string then takes the String by
+            // value and moves it into Expr — single allocation total.
+            let s = String::from_utf8(bytes)
                 .map_err(|_| Error::InvalidWxf("String payload not valid UTF-8".into()))?;
             c.consume_string(s)
         }
         TOKEN_SYMBOL => {
             let len = read_varint(r)? as usize;
             let bytes = read_exact_n(r, len)?;
-            let s = std::str::from_utf8(&bytes)
+            let s = String::from_utf8(bytes)
                 .map_err(|_| Error::InvalidWxf("Symbol payload not valid UTF-8".into()))?;
             c.consume_symbol(s)
         }

@@ -151,6 +151,24 @@ impl Symbol {
         None
     }
 
+    /// Same as [`try_from_wxf_name`][Self::try_from_wxf_name], but takes the name
+    /// by value so the underlying `String` can be moved into the [`Symbol`]'s
+    /// `Arc<String>` storage instead of being cloned. On failure, returns the
+    /// original `String` back via `Err` so the caller can include it in error
+    /// messages.
+    ///
+    /// This is the zero-extra-copy path used by the WXF deserializer: bytes from
+    /// the wire flow into a `Vec<u8>`, get consumed into a `String` via
+    /// `String::from_utf8`, and then become the `Arc<String>` inside `Symbol`
+    /// without an intermediate copy.
+    pub fn try_from_wxf_name_owned(input: String) -> Result<Self, String> {
+        if SymbolRef::try_new(&input).is_some() || SymbolNameRef::try_new(&input).is_some() {
+            // SAFETY: validated above by SymbolRef or SymbolNameRef parsing.
+            return Ok(unsafe { Symbol::unchecked_new(input) });
+        }
+        Err(input)
+    }
+
     /// Construct a symbol from `input`.
     ///
     /// # Panics

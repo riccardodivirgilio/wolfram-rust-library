@@ -3,7 +3,7 @@
 
 use std::io::Write;
 
-use wolfram_expr::{NumericArray, NumericArrayRead, PackedArray};
+use wolfram_expr::{NumericArrayDataType, PackedArrayDataType};
 
 #[cfg(feature = "bignum")]
 use wolfram_expr::{BigInteger, BigReal};
@@ -134,20 +134,41 @@ impl<'w, W: Write> Serializer for WlSerializer<'w, W> {
         Ok(())
     }
 
-    fn serialize_numeric_array(&mut self, arr: &NumericArray) -> Result<(), Error> {
+    fn serialize_numeric_array(
+        &mut self,
+        data_type: NumericArrayDataType,
+        _dimensions: &[usize],
+        bytes: &[u8],
+    ) -> Result<(), Error> {
         // NumericArray[ {flat data...}, "TypeName" ] — uses the array's WL type name.
         // For multi-dim arrays this flattens; round-trip is preserved via WXF, not WL.
         self.out.write_all(b"NumericArray[")?;
-        write_array_data_as_list(self, arr.data_type(), arr.as_bytes())?;
-        write!(self.out, ", \"{}\"]", arr.data_type().name())?;
+        write_array_data_as_list(self, data_type, bytes)?;
+        write!(self.out, ", \"{}\"]", data_type.name())?;
         Ok(())
     }
 
-    fn serialize_packed_array(&mut self, arr: &PackedArray) -> Result<(), Error> {
-        // PackedArray bridges to NumericArrayRead's data_type:
-        let dt = NumericArrayRead::data_type(arr);
+    fn serialize_packed_array(
+        &mut self,
+        data_type: PackedArrayDataType,
+        _dimensions: &[usize],
+        bytes: &[u8],
+    ) -> Result<(), Error> {
+        // Bridge PackedArrayDataType → NumericArrayDataType for shared writer.
+        // (We use data_type as a proxy for the element width; NumericArrayDataType
+        // is a strict superset.)
+        let dt: NumericArrayDataType = match data_type {
+            PackedArrayDataType::Integer8 => NumericArrayDataType::Bit8,
+            PackedArrayDataType::Integer16 => NumericArrayDataType::Bit16,
+            PackedArrayDataType::Integer32 => NumericArrayDataType::Bit32,
+            PackedArrayDataType::Integer64 => NumericArrayDataType::Bit64,
+            PackedArrayDataType::Real32 => NumericArrayDataType::Real32,
+            PackedArrayDataType::Real64 => NumericArrayDataType::Real64,
+            PackedArrayDataType::ComplexReal32 => NumericArrayDataType::ComplexReal32,
+            PackedArrayDataType::ComplexReal64 => NumericArrayDataType::ComplexReal64,
+        };
         self.out.write_all(b"Developer`ToPackedArray[")?;
-        write_array_data_as_list(self, dt, arr.as_bytes())?;
+        write_array_data_as_list(self, dt, bytes)?;
         self.out.write_all(b"]")?;
         Ok(())
     }

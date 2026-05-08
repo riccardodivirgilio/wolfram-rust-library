@@ -3,7 +3,8 @@
 
 use crate::Error;
 use wolfram_expr::{
-    Association, Expr, ExprKind, NumericArray, NumericArrayElement, PackedArray, Symbol,
+    ArrayBuf, Association, Expr, ExprKind, NumericArray, NumericArrayDataType,
+    NumericArrayElement, PackedArray, PackedArrayDataType, Symbol,
 };
 
 #[cfg(feature = "bignum")]
@@ -43,11 +44,29 @@ pub trait Serializer {
         entries: &[(&dyn ToWolfram, &dyn ToWolfram, bool)],
     ) -> Result<(), Error>;
 
-    /// Write a NumericArray (typed N-dim flat buffer).
-    fn serialize_numeric_array(&mut self, arr: &NumericArray) -> Result<(), Error>;
+    /// Write a NumericArray as raw parts: type tag, dimensions, and the flat
+    /// little-endian byte buffer of `prod(dims) * data_type.size_in_bytes()` bytes.
+    ///
+    /// Taking the raw parts (rather than `&NumericArray`) lets callers serialize
+    /// from any byte source — including a `Vec<T>` reinterpreted as `&[u8]` —
+    /// without materializing an intermediate `NumericArray` value (which would
+    /// allocate + copy the byte buffer).
+    fn serialize_numeric_array(
+        &mut self,
+        data_type: NumericArrayDataType,
+        dimensions: &[usize],
+        bytes: &[u8],
+    ) -> Result<(), Error>;
 
-    /// Write a PackedArray (typed N-dim flat buffer, narrower element-type set).
-    fn serialize_packed_array(&mut self, arr: &PackedArray) -> Result<(), Error>;
+    /// Write a PackedArray as raw parts. Same shape as
+    /// [`serialize_numeric_array`][Self::serialize_numeric_array] but with the
+    /// narrower [`PackedArrayDataType`] tag.
+    fn serialize_packed_array(
+        &mut self,
+        data_type: PackedArrayDataType,
+        dimensions: &[usize],
+        bytes: &[u8],
+    ) -> Result<(), Error>;
 
     //---- arbitrary precision (feature-gated) ----
 
@@ -157,17 +176,23 @@ impl ToWolfram for [u8] {
 // are intentionally *not* implemented — they have no faithful NumericArray
 // representation, so writing `vec![expr1, expr2].serialize(s)` is a compile
 // error. Build a list explicitly via `Expr::list(...)` or `Expr::normal(...)`.
+//
+// Zero-copy: bytes flow directly from the user's `Vec<T>` storage into the
+// serializer's writer. No intermediate `NumericArray` is allocated.
 impl<T: VecAsNumericArray> ToWolfram for Vec<T> {
     fn serialize(&self, s: &mut dyn Serializer) -> Result<(), Error> {
-        let arr = NumericArray::from_slice::<T>(vec![self.len()], self);
-        s.serialize_numeric_array(&arr)
+        self.as_slice().serialize(s)
     }
 }
 
 impl<T: VecAsNumericArray> ToWolfram for [T] {
     fn serialize(&self, s: &mut dyn Serializer) -> Result<(), Error> {
-        let arr = NumericArray::from_slice::<T>(vec![self.len()], self);
-        s.serialize_numeric_array(&arr)
+        // SAFETY: T is sealed `NumericArrayElement` (primitive numeric type),
+        // so the bytes are a valid little-endian flat buffer for T::TYPE.
+        let bytes: &[u8] = unsafe {
+            std::slice::from_raw_parts(self.as_ptr() as *const u8, std::mem::size_of_val(self))
+        };
+        s.serialize_numeric_array(T::TYPE, &[self.len()], bytes)
     }
 }
 
@@ -214,13 +239,21 @@ impl ToWolfram for Symbol {
 
 impl ToWolfram for NumericArray {
     fn serialize(&self, s: &mut dyn Serializer) -> Result<(), Error> {
-        s.serialize_numeric_array(self)
+        s.serialize_numeric_array(
+            ArrayBuf::data_type(self),
+            ArrayBuf::dimensions(self),
+            ArrayBuf::as_bytes(self),
+        )
     }
 }
 
 impl ToWolfram for PackedArray {
     fn serialize(&self, s: &mut dyn Serializer) -> Result<(), Error> {
-        s.serialize_packed_array(self)
+        s.serialize_packed_array(
+            ArrayBuf::data_type(self),
+            ArrayBuf::dimensions(self),
+            ArrayBuf::as_bytes(self),
+        )
     }
 }
 
@@ -266,8 +299,16 @@ impl ToWolfram for Expr {
             }
             ExprKind::ByteArray(b) => s.serialize_byte_array(b.as_slice()),
             ExprKind::Association(a) => a.serialize(s),
-            ExprKind::NumericArray(arr) => s.serialize_numeric_array(arr),
-            ExprKind::PackedArray(arr) => s.serialize_packed_array(arr),
+            ExprKind::NumericArray(arr) => s.serialize_numeric_array(
+                ArrayBuf::data_type(arr),
+                ArrayBuf::dimensions(arr),
+                ArrayBuf::as_bytes(arr),
+            ),
+            ExprKind::PackedArray(arr) => s.serialize_packed_array(
+                ArrayBuf::data_type(arr),
+                ArrayBuf::dimensions(arr),
+                ArrayBuf::as_bytes(arr),
+            ),
             #[cfg(feature = "bignum")]
             ExprKind::BigInteger(n) => s.serialize_big_integer(n),
             #[cfg(feature = "bignum")]

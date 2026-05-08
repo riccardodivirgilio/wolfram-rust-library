@@ -22,9 +22,16 @@ pub trait WolframConsumer {
     /// Handle a real (f64) atom.
     fn consume_real(&mut self, f: f64) -> Result<Self::Value, Error>;
     /// Handle a string atom.
-    fn consume_string(&mut self, s: &str) -> Result<Self::Value, Error>;
+    ///
+    /// Takes ownership of the `String` so the consumer can move it directly
+    /// into its output type (e.g. `ExprKind::String`) without an extra copy.
+    fn consume_string(&mut self, s: String) -> Result<Self::Value, Error>;
+
     /// Handle a symbol atom (fully-qualified name, e.g. `"System`Plus"`).
-    fn consume_symbol(&mut self, name: &str) -> Result<Self::Value, Error>;
+    ///
+    /// Takes ownership of the `String` so the consumer can move it into the
+    /// `Symbol`'s `Arc<String>` storage without an extra copy.
+    fn consume_symbol(&mut self, name: String) -> Result<Self::Value, Error>;
     /// Handle a ByteArray atom.
     fn consume_byte_array(&mut self, bytes: Vec<u8>) -> Result<Self::Value, Error>;
 
@@ -74,14 +81,21 @@ impl WolframConsumer for ExprConsumer {
         Ok(Expr::real(f))
     }
 
-    fn consume_string(&mut self, s: &str) -> Result<Expr, Error> {
+    fn consume_string(&mut self, s: String) -> Result<Expr, Error> {
+        // Expr::string<S: Into<String>> — for `S = String`, `into()` is the
+        // identity, so the owned `s` is moved into `ExprKind::String` with no
+        // intermediate copy.
         Ok(Expr::string(s))
     }
 
-    fn consume_symbol(&mut self, name: &str) -> Result<Expr, Error> {
-        let sym = Symbol::try_from_wxf_name(name)
-            .ok_or_else(|| Error::InvalidWxf(format!("invalid symbol name: {:?}", name)))?;
-        Ok(Expr::symbol(sym))
+    fn consume_symbol(&mut self, name: String) -> Result<Expr, Error> {
+        // try_from_wxf_name_owned consumes the String into Symbol's Arc<String>
+        // on success; on failure the String comes back via Err so we can include
+        // it in the diagnostic.
+        match Symbol::try_from_wxf_name_owned(name) {
+            Ok(sym) => Ok(Expr::symbol(sym)),
+            Err(name) => Err(Error::InvalidWxf(format!("invalid symbol name: {:?}", name))),
+        }
     }
 
     fn consume_byte_array(&mut self, bytes: Vec<u8>) -> Result<Expr, Error> {
