@@ -73,6 +73,7 @@ pub trait PackedArrayElement: Sized + Copy + 'static + sealed::Sealed {
 }
 
 mod sealed {
+    use crate::complex::{Complex32, Complex64};
     pub trait Sealed {}
     impl Sealed for i8 {}
     impl Sealed for i16 {}
@@ -80,6 +81,8 @@ mod sealed {
     impl Sealed for i64 {}
     impl Sealed for f32 {}
     impl Sealed for f64 {}
+    impl Sealed for Complex32 {}
+    impl Sealed for Complex64 {}
 }
 
 impl PackedArrayElement for i8 {
@@ -99,6 +102,12 @@ impl PackedArrayElement for f32 {
 }
 impl PackedArrayElement for f64 {
     const TYPE: PackedArrayDataType = PackedArrayDataType::Real64;
+}
+impl PackedArrayElement for crate::complex::Complex32 {
+    const TYPE: PackedArrayDataType = PackedArrayDataType::ComplexReal32;
+}
+impl PackedArrayElement for crate::complex::Complex64 {
+    const TYPE: PackedArrayDataType = PackedArrayDataType::ComplexReal64;
 }
 
 impl ArrayTag for PackedArrayDataType {

@@ -216,6 +216,11 @@ fn generate_library_link_bindings(
         .constified_enum_module("MNumericArray_Convert_Method")
         .constified_enum_module("MImage_Data_Type")
         .constified_enum_module("MImage_CS_Type")
+        // `mcomplex` is provided by `wolfram-expr::Complex64` (re-exported as
+        // `mcomplex` in wolfram-library-link-sys/src/lib.rs). Skip the bindgen
+        // definition + layout test so the same complex type is shared across
+        // the entire crate stack.
+        .blocklist_type("mcomplex")
         .clang_args(&["-target", target])
         .generate()
         .expect("unable to generate Rust bindings to Wolfram LibraryLink using bindgen");

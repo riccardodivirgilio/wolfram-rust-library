@@ -1,8 +1,8 @@
 //! WXF self-roundtrip tests: export → import → equal.
 
 use wolfram_expr::{
-    Association, ByteArray, Expr, NumericArray, NumericArrayDataType, PackedArray,
-    PackedArrayDataType, Symbol,
+    Association, ByteArray, Complex32, Complex64, Expr, NumericArray, NumericArrayDataType,
+    PackedArray, PackedArrayDataType, Symbol,
 };
 use wolfram_serializer::{export, import, Format};
 
@@ -143,6 +143,37 @@ fn vec_i32_serializes_as_numeric_array() {
     assert_eq!(arr.data_type(), NumericArrayDataType::Bit32);
     assert_eq!(arr.dimensions(), &[4]);
     assert_eq!(arr.try_as_slice::<i32>(), Some([10, 20, 30, 40].as_slice()));
+}
+
+#[test]
+fn numeric_array_complex64() {
+    let arr = NumericArray::from_slice::<Complex64>(
+        vec![3],
+        &[
+            Complex64::new(1.0, 2.0),
+            Complex64::new(0.0, -1.0),
+            Complex64::new(-3.5, 4.5),
+        ],
+    );
+    roundtrip(Expr::from(arr));
+}
+
+#[test]
+fn numeric_array_complex32() {
+    let arr = NumericArray::from_slice::<Complex32>(
+        vec![2],
+        &[Complex32::new(1.0, 2.0), Complex32::new(3.0, 4.0)],
+    );
+    roundtrip(Expr::from(arr));
+}
+
+#[test]
+fn packed_array_complex64() {
+    let arr = PackedArray::from_slice::<Complex64>(
+        vec![2],
+        &[Complex64::new(1.5, -2.5), Complex64::new(0.0, 1.0)],
+    );
+    roundtrip(Expr::from(arr));
 }
 
 #[test]

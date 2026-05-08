@@ -216,11 +216,37 @@ fn write_array_data_as_list<W: Write>(
         DT::UBit64 => emit!(u64),
         DT::Real32 => emit_real!(f32),
         DT::Real64 => emit_real!(f64),
-        // Complex types: emit as "<ComplexReal32 elements>" placeholder — WL's
-        // textual InputForm for these is awkward and not worth special-casing in V1.
-        DT::ComplexReal32 | DT::ComplexReal64 => {
-            s.out.write_all(b"(* complex elements omitted *)")?;
-        }
+        DT::ComplexReal32 => {
+            // Render as Complex[re, im] per element. f32 layout: re, im interleaved.
+            let count = bytes.len() / 8;
+            for i in 0..count {
+                if i != 0 {
+                    s.out.write_all(b", ")?;
+                }
+                let mut re_buf = [0u8; 4];
+                let mut im_buf = [0u8; 4];
+                re_buf.copy_from_slice(&bytes[i * 8..i * 8 + 4]);
+                im_buf.copy_from_slice(&bytes[i * 8 + 4..i * 8 + 8]);
+                let re = f32::from_le_bytes(re_buf);
+                let im = f32::from_le_bytes(im_buf);
+                write!(s.out, "Complex[{:?}, {:?}]", re, im)?;
+            }
+        },
+        DT::ComplexReal64 => {
+            let count = bytes.len() / 16;
+            for i in 0..count {
+                if i != 0 {
+                    s.out.write_all(b", ")?;
+                }
+                let mut re_buf = [0u8; 8];
+                let mut im_buf = [0u8; 8];
+                re_buf.copy_from_slice(&bytes[i * 16..i * 16 + 8]);
+                im_buf.copy_from_slice(&bytes[i * 16 + 8..i * 16 + 16]);
+                let re = f64::from_le_bytes(re_buf);
+                let im = f64::from_le_bytes(im_buf);
+                write!(s.out, "Complex[{:?}, {:?}]", re, im)?;
+            }
+        },
     }
     s.out.write_all(b"}")?;
     Ok(())

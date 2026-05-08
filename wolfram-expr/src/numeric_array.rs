@@ -142,6 +142,7 @@ pub trait NumericArrayElement: Sized + Copy + 'static + private::Sealed {
 }
 
 mod private {
+    use crate::complex::{Complex32, Complex64};
     pub trait Sealed {}
 
     impl Sealed for i8 {}
@@ -154,6 +155,8 @@ mod private {
     impl Sealed for u64 {}
     impl Sealed for f32 {}
     impl Sealed for f64 {}
+    impl Sealed for Complex32 {}
+    impl Sealed for Complex64 {}
 }
 
 impl NumericArrayElement for i8 {
@@ -187,6 +190,13 @@ impl NumericArrayElement for f32 {
 }
 impl NumericArrayElement for f64 {
     const TYPE: NumericArrayDataType = NumericArrayDataType::Real64;
+}
+
+impl NumericArrayElement for crate::complex::Complex32 {
+    const TYPE: NumericArrayDataType = NumericArrayDataType::ComplexReal32;
+}
+impl NumericArrayElement for crate::complex::Complex64 {
+    const TYPE: NumericArrayDataType = NumericArrayDataType::ComplexReal64;
 }
 
 //======================================
