@@ -92,7 +92,7 @@ fn numeric_array_real64() {
 #[test]
 fn numeric_array_unsigned_3d() {
     let arr = NumericArray::new(
-        NumericArrayDataType::UBit8,
+        NumericArrayDataType::UnsignedInteger8,
         vec![2, 2, 2],
         vec![1u8, 2, 3, 4, 5, 6, 7, 8],
     );
@@ -140,7 +140,7 @@ fn vec_i32_serializes_as_numeric_array() {
         .unwrap();
     let parsed = wolfram_serializer::import(&bytes, wolfram_serializer::Format::Wxf).unwrap();
     let arr = parsed.try_as_numeric_array().expect("expected NumericArray");
-    assert_eq!(arr.data_type(), NumericArrayDataType::Bit32);
+    assert_eq!(arr.data_type(), NumericArrayDataType::Integer32);
     assert_eq!(arr.dimensions(), &[4]);
     assert_eq!(arr.try_as_slice::<i32>(), Some([10, 20, 30, 40].as_slice()));
 }

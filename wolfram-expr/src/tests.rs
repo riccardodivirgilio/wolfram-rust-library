@@ -93,7 +93,7 @@ fn numeric_array_variant_roundtrip() {
     assert!(matches!(expr.kind(), ExprKind::NumericArray(_)));
     let got = expr.try_as_numeric_array().unwrap();
     assert_eq!(got.dimensions(), &[2, 2]);
-    assert_eq!(got.data_type(), NumericArrayDataType::Bit32);
+    assert_eq!(got.data_type(), NumericArrayDataType::Integer32);
     assert_eq!(got.try_as_slice::<i32>(), Some([10, 20, 30, 40].as_slice()));
 }
 

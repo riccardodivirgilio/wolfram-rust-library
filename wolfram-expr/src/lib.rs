@@ -33,7 +33,7 @@ use std::sync::Arc;
 #[doc(inline)]
 pub use self::symbol::Symbol;
 
-pub use self::array_buf::{ArrayBuf, ArrayTag};
+pub use self::array_buf::{ArrayBuf, ArrayElement, ArrayTag};
 pub use self::association::{Association, RuleEntry};
 pub use self::byte_array::ByteArray;
 pub use self::complex::{Complex32, Complex64};

@@ -168,10 +168,10 @@ impl<'w, W: Write> Serializer for WxfSerializer<'w, W> {
         self.out.write_all(&[TOKEN_PACKED_ARRAY])?;
         // Bridge PackedArrayDataType → NumericArrayDataType for the wire byte.
         let na_dt: NumericArrayDataType = match data_type {
-            PackedArrayDataType::Integer8 => NumericArrayDataType::Bit8,
-            PackedArrayDataType::Integer16 => NumericArrayDataType::Bit16,
-            PackedArrayDataType::Integer32 => NumericArrayDataType::Bit32,
-            PackedArrayDataType::Integer64 => NumericArrayDataType::Bit64,
+            PackedArrayDataType::Integer8 => NumericArrayDataType::Integer8,
+            PackedArrayDataType::Integer16 => NumericArrayDataType::Integer16,
+            PackedArrayDataType::Integer32 => NumericArrayDataType::Integer32,
+            PackedArrayDataType::Integer64 => NumericArrayDataType::Integer64,
             PackedArrayDataType::Real32 => NumericArrayDataType::Real32,
             PackedArrayDataType::Real64 => NumericArrayDataType::Real64,
             PackedArrayDataType::ComplexReal32 => NumericArrayDataType::ComplexReal32,

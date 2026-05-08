@@ -86,29 +86,29 @@ mod private {
 }
 
 impl NumericArrayType for i8 {
-    const TYPE: NumericArrayDataType = NumericArrayDataType::Bit8;
+    const TYPE: NumericArrayDataType = NumericArrayDataType::Integer8;
 }
 impl NumericArrayType for i16 {
-    const TYPE: NumericArrayDataType = NumericArrayDataType::Bit16;
+    const TYPE: NumericArrayDataType = NumericArrayDataType::Integer16;
 }
 impl NumericArrayType for i32 {
-    const TYPE: NumericArrayDataType = NumericArrayDataType::Bit32;
+    const TYPE: NumericArrayDataType = NumericArrayDataType::Integer32;
 }
 impl NumericArrayType for i64 {
-    const TYPE: NumericArrayDataType = NumericArrayDataType::Bit64;
+    const TYPE: NumericArrayDataType = NumericArrayDataType::Integer64;
 }
 
 impl NumericArrayType for u8 {
-    const TYPE: NumericArrayDataType = NumericArrayDataType::UBit8;
+    const TYPE: NumericArrayDataType = NumericArrayDataType::UnsignedInteger8;
 }
 impl NumericArrayType for u16 {
-    const TYPE: NumericArrayDataType = NumericArrayDataType::UBit16;
+    const TYPE: NumericArrayDataType = NumericArrayDataType::UnsignedInteger16;
 }
 impl NumericArrayType for u32 {
-    const TYPE: NumericArrayDataType = NumericArrayDataType::UBit32;
+    const TYPE: NumericArrayDataType = NumericArrayDataType::UnsignedInteger32;
 }
 impl NumericArrayType for u64 {
-    const TYPE: NumericArrayDataType = NumericArrayDataType::UBit64;
+    const TYPE: NumericArrayDataType = NumericArrayDataType::UnsignedInteger64;
 }
 
 impl NumericArrayType for f32 {
@@ -155,18 +155,18 @@ pub enum NumericArrayKind<'e> {
     //
     // Signed integer types
     //
-    Bit8(&'e NumericArray<i8>),
-    Bit16(&'e NumericArray<i16>),
-    Bit32(&'e NumericArray<i32>),
-    Bit64(&'e NumericArray<i64>),
+    Integer8(&'e NumericArray<i8>),
+    Integer16(&'e NumericArray<i16>),
+    Integer32(&'e NumericArray<i32>),
+    Integer64(&'e NumericArray<i64>),
 
     //
     // Unsigned integer types
     //
-    UBit8(&'e NumericArray<u8>),
-    UBit16(&'e NumericArray<u16>),
-    UBit32(&'e NumericArray<u32>),
-    UBit64(&'e NumericArray<u64>),
+    UnsignedInteger8(&'e NumericArray<u8>),
+    UnsignedInteger16(&'e NumericArray<u16>),
+    UnsignedInteger32(&'e NumericArray<u32>),
+    UnsignedInteger64(&'e NumericArray<u64>),
 
     //
     // Real types
@@ -203,14 +203,14 @@ impl NumericArray {
     ///
     /// fn sum(array: NumericArray) -> i64 {
     ///     match array.kind() {
-    ///         NumericArrayKind::Bit8(na) => na.as_slice().into_iter().copied().map(i64::from).sum(),
-    ///         NumericArrayKind::Bit16(na) => na.as_slice().into_iter().copied().map(i64::from).sum(),
-    ///         NumericArrayKind::Bit32(na) => na.as_slice().into_iter().copied().map(i64::from).sum(),
-    ///         NumericArrayKind::Bit64(na) => na.as_slice().into_iter().sum(),
-    ///         NumericArrayKind::UBit8(na) => na.as_slice().into_iter().copied().map(i64::from).sum(),
-    ///         NumericArrayKind::UBit16(na) => na.as_slice().into_iter().copied().map(i64::from).sum(),
-    ///         NumericArrayKind::UBit32(na) => na.as_slice().into_iter().copied().map(i64::from).sum(),
-    ///         NumericArrayKind::UBit64(na) => {
+    ///         NumericArrayKind::Integer8(na) => na.as_slice().into_iter().copied().map(i64::from).sum(),
+    ///         NumericArrayKind::Integer16(na) => na.as_slice().into_iter().copied().map(i64::from).sum(),
+    ///         NumericArrayKind::Integer32(na) => na.as_slice().into_iter().copied().map(i64::from).sum(),
+    ///         NumericArrayKind::Integer64(na) => na.as_slice().into_iter().sum(),
+    ///         NumericArrayKind::UnsignedInteger8(na) => na.as_slice().into_iter().copied().map(i64::from).sum(),
+    ///         NumericArrayKind::UnsignedInteger16(na) => na.as_slice().into_iter().copied().map(i64::from).sum(),
+    ///         NumericArrayKind::UnsignedInteger32(na) => na.as_slice().into_iter().copied().map(i64::from).sum(),
+    ///         NumericArrayKind::UnsignedInteger64(na) => {
     ///             match i64::try_from(na.as_slice().into_iter().sum::<u64>()) {
     ///                 Ok(sum) => sum,
     ///                 Err(_) => panic!("overflows i64"),
@@ -235,15 +235,15 @@ impl NumericArray {
             use NumericArrayDataType::*;
 
             match self.data_type() {
-                Bit8 => NumericArrayKind::Bit8(trans(self)),
-                Bit16 => NumericArrayKind::Bit16(trans(self)),
-                Bit32 => NumericArrayKind::Bit32(trans(self)),
-                Bit64 => NumericArrayKind::Bit64(trans(self)),
+                Integer8 => NumericArrayKind::Integer8(trans(self)),
+                Integer16 => NumericArrayKind::Integer16(trans(self)),
+                Integer32 => NumericArrayKind::Integer32(trans(self)),
+                Integer64 => NumericArrayKind::Integer64(trans(self)),
 
-                UBit8 => NumericArrayKind::UBit8(trans(self)),
-                UBit16 => NumericArrayKind::UBit16(trans(self)),
-                UBit32 => NumericArrayKind::UBit32(trans(self)),
-                UBit64 => NumericArrayKind::UBit64(trans(self)),
+                UnsignedInteger8 => NumericArrayKind::UnsignedInteger8(trans(self)),
+                UnsignedInteger16 => NumericArrayKind::UnsignedInteger16(trans(self)),
+                UnsignedInteger32 => NumericArrayKind::UnsignedInteger32(trans(self)),
+                UnsignedInteger64 => NumericArrayKind::UnsignedInteger64(trans(self)),
 
                 Real32 => NumericArrayKind::Real32(trans(self)),
                 Real64 => NumericArrayKind::Real64(trans(self)),

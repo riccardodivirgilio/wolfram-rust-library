@@ -156,10 +156,10 @@ impl<'w, W: Write> Serializer for WlSerializer<'w, W> {
         // (We use data_type as a proxy for the element width; NumericArrayDataType
         // is a strict superset.)
         let dt: NumericArrayDataType = match data_type {
-            PackedArrayDataType::Integer8 => NumericArrayDataType::Bit8,
-            PackedArrayDataType::Integer16 => NumericArrayDataType::Bit16,
-            PackedArrayDataType::Integer32 => NumericArrayDataType::Bit32,
-            PackedArrayDataType::Integer64 => NumericArrayDataType::Bit64,
+            PackedArrayDataType::Integer8 => NumericArrayDataType::Integer8,
+            PackedArrayDataType::Integer16 => NumericArrayDataType::Integer16,
+            PackedArrayDataType::Integer32 => NumericArrayDataType::Integer32,
+            PackedArrayDataType::Integer64 => NumericArrayDataType::Integer64,
             PackedArrayDataType::Real32 => NumericArrayDataType::Real32,
             PackedArrayDataType::Real64 => NumericArrayDataType::Real64,
             PackedArrayDataType::ComplexReal32 => NumericArrayDataType::ComplexReal32,
@@ -221,14 +221,14 @@ fn write_array_data_as_list<W: Write>(
         }};
     }
     match dt {
-        DT::Bit8 => emit!(i8),
-        DT::Bit16 => emit!(i16),
-        DT::Bit32 => emit!(i32),
-        DT::Bit64 => emit!(i64),
-        DT::UBit8 => emit!(u8),
-        DT::UBit16 => emit!(u16),
-        DT::UBit32 => emit!(u32),
-        DT::UBit64 => emit!(u64),
+        DT::Integer8 => emit!(i8),
+        DT::Integer16 => emit!(i16),
+        DT::Integer32 => emit!(i32),
+        DT::Integer64 => emit!(i64),
+        DT::UnsignedInteger8 => emit!(u8),
+        DT::UnsignedInteger16 => emit!(u16),
+        DT::UnsignedInteger32 => emit!(u32),
+        DT::UnsignedInteger64 => emit!(u64),
         DT::Real32 => emit_real!(f32),
         DT::Real64 => emit_real!(f64),
         DT::ComplexReal32 => {

@@ -208,10 +208,10 @@ fn parse_packed_array<R: Read>(r: &mut R) -> Result<PackedArray, Error> {
     })?;
     // Bridge to PackedArrayDataType (PackedArray's narrower set):
     let pdt = match dt {
-        wolfram_expr::NumericArrayDataType::Bit8 => PackedArrayDataType::Integer8,
-        wolfram_expr::NumericArrayDataType::Bit16 => PackedArrayDataType::Integer16,
-        wolfram_expr::NumericArrayDataType::Bit32 => PackedArrayDataType::Integer32,
-        wolfram_expr::NumericArrayDataType::Bit64 => PackedArrayDataType::Integer64,
+        wolfram_expr::NumericArrayDataType::Integer8 => PackedArrayDataType::Integer8,
+        wolfram_expr::NumericArrayDataType::Integer16 => PackedArrayDataType::Integer16,
+        wolfram_expr::NumericArrayDataType::Integer32 => PackedArrayDataType::Integer32,
+        wolfram_expr::NumericArrayDataType::Integer64 => PackedArrayDataType::Integer64,
         wolfram_expr::NumericArrayDataType::Real32 => PackedArrayDataType::Real32,
         wolfram_expr::NumericArrayDataType::Real64 => PackedArrayDataType::Real64,
         wolfram_expr::NumericArrayDataType::ComplexReal32 => PackedArrayDataType::ComplexReal32,

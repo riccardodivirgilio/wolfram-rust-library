@@ -28,6 +28,36 @@ pub trait ArrayTag:
     fn to_numeric_array_data_type(self) -> NumericArrayDataType;
 }
 
+/// Sealed marker for Rust primitives valid as an array element. The set is
+/// fixed (the C ABI only knows these widths), so external types can't
+/// implement [`ArrayElement`].
+mod sealed {
+    use crate::complex::{Complex32, Complex64};
+    pub trait Sealed {}
+    impl Sealed for i8 {}
+    impl Sealed for i16 {}
+    impl Sealed for i32 {}
+    impl Sealed for i64 {}
+    impl Sealed for u8 {}
+    impl Sealed for u16 {}
+    impl Sealed for u32 {}
+    impl Sealed for u64 {}
+    impl Sealed for f32 {}
+    impl Sealed for f64 {}
+    impl Sealed for Complex32 {}
+    impl Sealed for Complex64 {}
+}
+
+/// Connects a Rust primitive to its [`ArrayTag`]-side discriminant. Implemented
+/// once per `(type, tag)` pair: e.g. `i32: ArrayElement<NumericArrayDataType>`
+/// (with `TAG = Integer32`) and `i32: ArrayElement<PackedArrayDataType>` (with
+/// `TAG = Integer32`). Sealed — only the primitives in [`sealed`] above can
+/// satisfy the `Sealed` super-bound.
+pub trait ArrayElement<Tag: ArrayTag>: Copy + 'static + sealed::Sealed {
+    /// The element-type tag for `Self` under this array kind.
+    const TAG: Tag;
+}
+
 /// Generic dense N-dimensional buffer parameterized by an element-type tag.
 ///
 /// `NumericArray = ArrayBuf<NumericArrayDataType>` and
@@ -91,6 +121,35 @@ impl<Tag: ArrayTag> ArrayBuf<Tag> {
     /// Bytes per element (per the element-type tag).
     pub fn element_size(&self) -> usize {
         self.data_type.size_in_bytes()
+    }
+
+    /// Construct from a typed slice. Dimensions must satisfy
+    /// `prod(dimensions) == slice.len()`.
+    pub fn from_slice<T: ArrayElement<Tag>>(dimensions: Vec<usize>, slice: &[T]) -> Self {
+        assert_eq!(
+            dimensions.iter().product::<usize>(),
+            slice.len(),
+            "ArrayBuf::from_slice: dims product must equal slice length"
+        );
+        let bytes: &[u8] = unsafe {
+            std::slice::from_raw_parts(slice.as_ptr() as *const u8, std::mem::size_of_val(slice))
+        };
+        ArrayBuf::new(T::TAG, dimensions, ByteArray::from(bytes))
+    }
+
+    /// Try to view the buffer as a slice of `T`. Returns `None` if `T`'s tag
+    /// doesn't match this array's [`data_type`][Self::data_type].
+    pub fn try_as_slice<T: ArrayElement<Tag>>(&self) -> Option<&[T]> {
+        if self.data_type != T::TAG {
+            return None;
+        }
+        let bytes = self.as_bytes();
+        let elem_size = std::mem::size_of::<T>();
+        debug_assert_eq!(bytes.len() % elem_size, 0);
+        // SAFETY: tag matches T, so the bytes were produced from a `[T]`.
+        Some(unsafe {
+            std::slice::from_raw_parts(bytes.as_ptr() as *const T, bytes.len() / elem_size)
+        })
     }
 }
 
