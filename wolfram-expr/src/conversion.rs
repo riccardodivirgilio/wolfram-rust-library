@@ -10,6 +10,14 @@ impl Expr {
         }
     }
 
+    /// If this is an [`ExprKind::String`] expression, return that. Otherwise return None.
+    pub fn try_as_str(&self) -> Option<&str> {
+        match self.kind() {
+            ExprKind::String(ref string) => Some(string.as_str()),
+            _ => None,
+        }
+    }
+
     /// If this is a [`Symbol`] expression, return that. Otherwise return None.
     pub fn try_as_symbol(&self) -> Option<&Symbol> {
         match self.kind() {

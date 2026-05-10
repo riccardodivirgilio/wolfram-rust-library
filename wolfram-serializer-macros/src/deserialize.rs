@@ -16,7 +16,7 @@ use syn::spanned::Spanned;
 use syn::{Data, DataEnum, DataStruct, DeriveInput, Fields, Result};
 
 use crate::shared::{parse_container_attrs, parse_field_attrs, qualify_symbol, ContainerAttrs};
-use crate::ty_classify::{classify, FieldKind};
+use crate::ty_classify::{classify, is_option_type, FieldKind};
 
 pub(crate) fn expand(input: &DeriveInput) -> Result<TokenStream> {
     let name = &input.ident;
@@ -92,17 +92,24 @@ fn expand_struct(
                     }
                 }
             });
-            // Unwrap each slot at the end.
+            // Unwrap each slot at the end.  `Option<T>` fields default to
+            // `None` when the key is absent — `slot` for those is
+            // `Option<Option<T>>`, and `slot.flatten()` collapses the
+            // never-seen and seen-as-None cases together.
             let unwraps = fields.iter().zip(&field_idents).zip(&field_keys).map(|((f, id), k)| {
                 let slot = format_ident!("__slot_{}", id);
-                let path = format!("{}.{}", name_str, id);
                 let span = f.ty.span();
-                quote_spanned! { span =>
-                    let #id = #slot.ok_or_else(|| ::wolfram_serializer::from_wolfram::err_at(
-                        #path,
-                        "Association entry",
-                        format!("missing key {:?}", #k),
-                    ))?;
+                if is_option_type(&f.ty) {
+                    quote_spanned! { span => let #id = #slot.flatten(); }
+                } else {
+                    let path = format!("{}.{}", name_str, id);
+                    quote_spanned! { span =>
+                        let #id = #slot.ok_or_else(|| ::wolfram_serializer::from_wolfram::err_at(
+                            #path,
+                            "Association entry",
+                            format!("missing key {:?}", #k),
+                        ))?;
+                    }
                 }
             });
             Ok(quote! {
@@ -447,30 +454,44 @@ fn build_tuple_ctor_from_slice(ty: &syn::Type, idx: &mut usize) -> TokenStream {
 // Enums
 //==============================================================================
 
+// Wire format mirror of `serialize::expand_enum`: every variant rides on
+// an Association whose first entry is `"Enum" -> "VariantName"`. For
+// non-unit variants, the second entry is `"Data" -> List[…]` (tuple
+// variant) or `"Data" -> Association[…]` (struct variant).
+//
+// We require `"Enum"` to be the first key on the wire (the serializer
+// emits it that way; producers from other languages must follow the same
+// order). This sidesteps the need to buffer the `"Data"` payload before
+// knowing the variant — we read the variant name first, then dispatch the
+// per-variant reader to consume the rest of the entries.
 fn expand_enum(name: &syn::Ident, name_str: &str, data: &DataEnum) -> Result<TokenStream> {
-    // Peek the next token to decide which family of variant shapes to expect:
-    //   TOKEN_SYMBOL    → unit variant   (read symbol, match name → no-arg variant)
-    //   TOKEN_FUNCTION  → tuple/struct variant (read header, read head symbol, dispatch)
-    //
-    // This requires the cursor's peek_token + a manual read of the symbol /
-    // function header. For unit variants we read the symbol and dispatch on
-    // its name. For function variants, after reading the header + head, we
-    // dispatch on the head symbol and continue reading the args.
-    let mut unit_arms = Vec::new();
-    let mut function_arms = Vec::new();
+    let mut variant_arms = Vec::with_capacity(data.variants.len());
 
     for v in &data.variants {
-        let v_attrs = parse_container_attrs(&v.attrs)?;
+        let _v_attrs = parse_container_attrs(&v.attrs)?;
         let v_name = &v.ident;
-        let v_symbol = qualify_symbol(&v_name.to_string(), &v_attrs);
+        let v_str = v_name.to_string();
         let v_path = format!("{}::{}", name_str, v_name);
         match &v.fields {
             Fields::Unit => {
-                unit_arms.push(quote! {
-                    #v_symbol => return ::core::result::Result::Ok(#name :: #v_name),
+                // Unit: must be a 1-entry Association (no "Data" key).
+                variant_arms.push(quote! {
+                    #v_str => {
+                        if __n != 1 {
+                            return ::core::result::Result::Err(
+                                ::wolfram_serializer::from_wolfram::err_at(
+                                    #v_path,
+                                    "Association with 1 entry (unit variant)",
+                                    format!("Association with {} entries", __n),
+                                ),
+                            );
+                        }
+                        return ::core::result::Result::Ok(#name :: #v_name);
+                    }
                 });
             }
             Fields::Unnamed(unnamed) => {
+                // Tuple variant: 2-entry Association; "Data" is a List of args.
                 let fields: Vec<&syn::Field> = unnamed.unnamed.iter().collect();
                 let arity = fields.len();
                 let mut bindings = Vec::with_capacity(arity);
@@ -483,14 +504,47 @@ fn expand_enum(name: &syn::Ident, name_str: &str, data: &DataEnum) -> Result<Tok
                     extracts.push(quote_spanned! { span => let #bind = #extract; });
                     bindings.push(quote! { #bind });
                 }
-                function_arms.push(quote! {
-                    #v_symbol => {
-                        if __arity != #arity as u64 {
+                variant_arms.push(quote! {
+                    #v_str => {
+                        if __n != 2 {
                             return ::core::result::Result::Err(
                                 ::wolfram_serializer::from_wolfram::err_at(
                                     #v_path,
-                                    concat!("Function with ", stringify!(#arity), " arguments"),
-                                    format!("Function with {} arguments", __arity),
+                                    "Association with 2 entries (tuple variant)",
+                                    format!("Association with {} entries", __n),
+                                ),
+                            );
+                        }
+                        let _delayed = __c.read_rule()?;
+                        let __data_key = __c.read_string()?;
+                        if __data_key.as_str() != "Data" {
+                            return ::core::result::Result::Err(
+                                ::wolfram_serializer::from_wolfram::err_at(
+                                    #v_path,
+                                    "Association entry with key \"Data\"",
+                                    format!("got key {:?}", __data_key),
+                                ),
+                            );
+                        }
+                        // "Data" value is a List[args...] — Function header
+                        // with head "System`List".
+                        let __list_arity = __c.read_function_header()?;
+                        let __list_head = __c.read_symbol()?;
+                        if __list_head.as_str() != "System`List" {
+                            return ::core::result::Result::Err(
+                                ::wolfram_serializer::from_wolfram::err_at(
+                                    #v_path,
+                                    "Function[List, ...] for tuple variant Data",
+                                    format!("Function[Symbol({:?}), ...]", __list_head.as_str()),
+                                ),
+                            );
+                        }
+                        if __list_arity != #arity as u64 {
+                            return ::core::result::Result::Err(
+                                ::wolfram_serializer::from_wolfram::err_at(
+                                    #v_path,
+                                    concat!("List with ", stringify!(#arity), " elements"),
+                                    format!("List with {} elements", __list_arity),
                                 ),
                             );
                         }
@@ -500,6 +554,8 @@ fn expand_enum(name: &syn::Ident, name_str: &str, data: &DataEnum) -> Result<Tok
                 });
             }
             Fields::Named(named) => {
+                // Struct variant: 2-entry Association; "Data" is itself an
+                // Association of the variant's fields.
                 let fields: Vec<&syn::Field> = named.named.iter().collect();
                 let mut field_keys: Vec<String> = Vec::with_capacity(fields.len());
                 let mut field_idents: Vec<&syn::Ident> = Vec::with_capacity(fields.len());
@@ -525,33 +581,49 @@ fn expand_enum(name: &syn::Ident, name_str: &str, data: &DataEnum) -> Result<Tok
                 });
                 let unwraps = fields.iter().zip(&field_idents).zip(&field_keys).map(|((f, id), k)| {
                     let slot = format_ident!("__slot_{}", id);
-                    let path = format!("{}.{}", v_path, id);
                     let span = f.ty.span();
-                    quote_spanned! { span =>
-                        let #id = #slot.ok_or_else(|| ::wolfram_serializer::from_wolfram::err_at(
-                            #path,
-                            "Association entry",
-                            format!("missing key {:?}", #k),
-                        ))?;
+                    if is_option_type(&f.ty) {
+                        quote_spanned! { span => let #id = #slot.flatten(); }
+                    } else {
+                        let path = format!("{}.{}", v_path, id);
+                        quote_spanned! { span =>
+                            let #id = #slot.ok_or_else(|| ::wolfram_serializer::from_wolfram::err_at(
+                                #path,
+                                "Association entry",
+                                format!("missing key {:?}", #k),
+                            ))?;
+                        }
                     }
                 });
-                function_arms.push(quote! {
-                    #v_symbol => {
-                        if __arity != 1 {
+                variant_arms.push(quote! {
+                    #v_str => {
+                        if __n != 2 {
                             return ::core::result::Result::Err(
                                 ::wolfram_serializer::from_wolfram::err_at(
                                     #v_path,
-                                    "Function with 1 Association argument",
-                                    format!("Function with {} arguments", __arity),
+                                    "Association with 2 entries (struct variant)",
+                                    format!("Association with {} entries", __n),
                                 ),
                             );
                         }
+                        let _delayed = __c.read_rule()?;
+                        let __data_key = __c.read_string()?;
+                        if __data_key.as_str() != "Data" {
+                            return ::core::result::Result::Err(
+                                ::wolfram_serializer::from_wolfram::err_at(
+                                    #v_path,
+                                    "Association entry with key \"Data\"",
+                                    format!("got key {:?}", __data_key),
+                                ),
+                            );
+                        }
+                        // "Data" value is an inner Association of fields.
                         let __inner_n = __c.read_association_header()?;
                         #(#slot_decls)*
                         for _ in 0..__inner_n {
-                            let _delayed = __c.read_rule()?;
-                            let __key = __c.read_string()?;
-                            match __key.as_str() {
+                            let _inner_delayed = __c.read_rule()?;
+                            let __inner_key = __c.read_string()?;
+                            match __inner_key.as_str() {
                                 #(#key_arms)*
                                 _ => __c.skip()?,
                             }
@@ -565,44 +637,41 @@ fn expand_enum(name: &syn::Ident, name_str: &str, data: &DataEnum) -> Result<Tok
     }
 
     Ok(quote! {
-        let __tag = __c.peek_token()?;
-        if __tag == ::wolfram_serializer::wxf::constants::TOKEN_SYMBOL {
-            let __sym = __c.read_symbol()?;
-            match __sym.as_str() {
-                #(#unit_arms)*
-                _ => {
-                    return ::core::result::Result::Err(
-                        ::wolfram_serializer::from_wolfram::err_at(
-                            #name_str,
-                            "matching enum unit-variant symbol",
-                            format!("Symbol({:?})", __sym.as_str()),
-                        ),
-                    );
-                }
+        // Read the outer Association header. For all variant shapes the
+        // first entry must be `"Enum" -> "VariantName"`.
+        let __n = __c.read_association_header()?;
+        if __n == 0 {
+            return ::core::result::Result::Err(
+                ::wolfram_serializer::from_wolfram::err_at(
+                    #name_str,
+                    "Association with at least an \"Enum\" entry",
+                    "empty Association".into(),
+                ),
+            );
+        }
+        let _enum_delayed = __c.read_rule()?;
+        let __enum_key = __c.read_string()?;
+        if __enum_key.as_str() != "Enum" {
+            return ::core::result::Result::Err(
+                ::wolfram_serializer::from_wolfram::err_at(
+                    #name_str,
+                    "Association entry with first key \"Enum\"",
+                    format!("got first key {:?}", __enum_key),
+                ),
+            );
+        }
+        let __variant = __c.read_string()?;
+        match __variant.as_str() {
+            #(#variant_arms)*
+            _ => {
+                return ::core::result::Result::Err(
+                    ::wolfram_serializer::from_wolfram::err_at(
+                        #name_str,
+                        "matching enum variant name",
+                        format!("\"Enum\" -> {:?}", __variant),
+                    ),
+                );
             }
         }
-        if __tag == ::wolfram_serializer::wxf::constants::TOKEN_FUNCTION {
-            let __arity = __c.read_function_header()?;
-            let __head = __c.read_symbol()?;
-            match __head.as_str() {
-                #(#function_arms)*
-                _ => {
-                    return ::core::result::Result::Err(
-                        ::wolfram_serializer::from_wolfram::err_at(
-                            #name_str,
-                            "matching enum function-variant head",
-                            format!("Symbol({:?})", __head.as_str()),
-                        ),
-                    );
-                }
-            }
-        }
-        ::core::result::Result::Err(
-            ::wolfram_serializer::from_wolfram::err_at(
-                #name_str,
-                "Symbol or Function for enum variant",
-                format!("token 0x{:02X}", __tag),
-            ),
-        )
     })
 }

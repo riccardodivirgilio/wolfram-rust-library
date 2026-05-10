@@ -271,3 +271,21 @@ fn array_len(expr: &syn::Expr) -> Option<usize> {
 fn same_type(a: &Type, b: &Type) -> bool {
     a.to_token_stream().to_string() == b.to_token_stream().to_string()
 }
+
+/// Returns `true` if `ty` is syntactically `Option<…>` (any path ending in
+/// the segment `Option` with one generic arg). Used by the deserialize derive
+/// to make absent keys default to `None` instead of erroring.
+pub(crate) fn is_option_type(ty: &Type) -> bool {
+    let path = match ty {
+        Type::Path(TypePath { qself: None, path }) => path,
+        _ => return false,
+    };
+    let last = match path.segments.last() {
+        Some(s) => s,
+        None => return false,
+    };
+    if last.ident != "Option" {
+        return false;
+    }
+    matches!(&last.arguments, PathArguments::AngleBracketed(args) if args.args.len() == 1)
+}

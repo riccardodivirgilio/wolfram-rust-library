@@ -28,6 +28,17 @@ struct Tensor1 {
     hetero: (i64, String),
 }
 
+/// Two required scalar fields + a third Option field. Used by
+/// `optional_field_missing_key_yields_none` to verify that an absent
+/// Association entry for an `Option<T>` field deserializes as `None`
+/// (not as a "missing key" error).
+#[derive(Debug, PartialEq, ToWolfram, FromWolfram)]
+struct TwoOrThree {
+    a: i64,
+    b: i64,
+    c: Option<String>,
+}
+
 #[derive(Debug, PartialEq, ToWolfram, FromWolfram)]
 enum Shape {
     Origin,
@@ -211,28 +222,100 @@ fn enum_roundtrips_all_variant_shapes() {
 
 #[test]
 fn enum_variants_emit_proper_shapes() {
+    use wolfram_expr::Expr;
+
+    // Helper: assert the parsed Expr is an Association whose first entry is
+    // `"Enum" -> variant_name_string`.
+    fn assert_enum_key(expr: &Expr, expected_variant: &str) -> Expr {
+        let assoc = expr.try_as_association().expect("Association");
+        let v = &assoc.get(&Expr::from("Enum")).expect("Enum key").value;
+        let s = v.try_as_str().expect("Enum value is String").to_string();
+        assert_eq!(s, expected_variant);
+        // Return Data value if present (for caller to inspect further).
+        assoc.get(&Expr::from("Data"))
+            .map(|e| e.value.clone())
+            .unwrap_or_else(|| Expr::symbol(wolfram_expr::Symbol::new("System`Null")))
+    }
+
+    // Unit variant: 1-entry Association with only "Enum".
     let bytes = to_wxf(&Shape::Origin).unwrap();
     let s = import(&bytes, Format::Wxf).unwrap();
-    assert_eq!(s.try_as_symbol().unwrap().as_str(), "Global`Origin");
+    let assoc = s.try_as_association().expect("Association");
+    assert_eq!(assoc.len(), 1);
+    let v = &assoc.get(&Expr::from("Enum")).unwrap().value;
+    assert_eq!(v.try_as_str().unwrap(), "Origin");
 
+    // Tuple variant (1 arg): "Data" → List of args.
     let bytes = to_wxf(&Shape::Square(2.0)).unwrap();
     let s = import(&bytes, Format::Wxf).unwrap();
-    let n = s.try_as_normal().unwrap();
-    assert_eq!(n.head().try_as_symbol().unwrap().as_str(), "Global`Square");
-    assert_eq!(n.elements().len(), 1);
+    let data = assert_enum_key(&s, "Square");
+    let list = data.try_as_normal().expect("Data is a List Function");
+    assert_eq!(list.head().try_as_symbol().unwrap().as_str(), "System`List");
+    assert_eq!(list.elements().len(), 1);
 
+    // Tuple variant (2 args): "Data" → List of 2 args.
     let bytes = to_wxf(&Shape::Rect(1.0, 2.0)).unwrap();
     let s = import(&bytes, Format::Wxf).unwrap();
-    let n = s.try_as_normal().unwrap();
-    assert_eq!(n.head().try_as_symbol().unwrap().as_str(), "Global`Rect");
-    assert_eq!(n.elements().len(), 2);
+    let data = assert_enum_key(&s, "Rect");
+    let list = data.try_as_normal().unwrap();
+    assert_eq!(list.head().try_as_symbol().unwrap().as_str(), "System`List");
+    assert_eq!(list.elements().len(), 2);
 
+    // Struct variant: "Data" → inner Association of named fields.
     let bytes = to_wxf(&Shape::Circle { radius: 3.0 }).unwrap();
     let s = import(&bytes, Format::Wxf).unwrap();
-    let n = s.try_as_normal().unwrap();
-    assert_eq!(n.head().try_as_symbol().unwrap().as_str(), "Global`Circle");
-    assert_eq!(n.elements().len(), 1);
-    let inner = &n.elements()[0];
-    let inner_assoc = inner.try_as_association().expect("inner is Association");
-    assert!(inner_assoc.get(&wolfram_expr::Expr::from("radius")).is_some());
+    let data = assert_enum_key(&s, "Circle");
+    let inner = data.try_as_association().expect("Data is an Association");
+    assert!(inner.get(&Expr::from("radius")).is_some());
+}
+
+/// Hand-craft WXF bytes for `<|"a" -> 1, "b" -> 2|>` — i.e. an Association
+/// with TwoOrThree's required keys but the Option key `c` deliberately
+/// absent. The derive must default `c` to `None` rather than erroring with
+/// "missing key".
+#[test]
+fn optional_field_missing_key_yields_none() {
+    // WXF wire format, byte by byte. Token byte values are from
+    // wolfram-serializer/src/wxf/constants.rs:
+    //   WXF_VERSION=`8` (0x38), WXF_HEADER_SEPARATOR=`:` (0x3a),
+    //   TOKEN_ASSOCIATION=`A` (0x41), TOKEN_RULE=`-` (0x2d),
+    //   TOKEN_STRING=`S` (0x53), TOKEN_INTEGER8=`C` (0x43).
+    #[rustfmt::skip]
+    let bytes: &[u8] = &[
+        0x38, 0x3a,             // WXF header `8:`
+        0x41,                   // Association token
+        0x02,                   // varint: 2 entries
+            0x2d,               //   Rule token
+            0x53, 0x01, 0x61,   //   key: String "a" (S, len=1, 'a')
+            0x43, 0x01,         //   value: Integer8(1)
+            0x2d,               //   Rule token
+            0x53, 0x01, 0x62,   //   key: String "b"
+            0x43, 0x02,         //   value: Integer8(2)
+        // No `c` entry — that key is absent on the wire.
+    ];
+
+    let parsed: TwoOrThree = from_wxf(bytes).expect("from_wxf should succeed");
+    assert_eq!(
+        parsed,
+        TwoOrThree {
+            a: 1,
+            b: 2,
+            c: None,
+        }
+    );
+
+    // Sanity: a missing required (non-Option) key still errors. Drop the `b`
+    // entry (and adjust the Association count to 1) to exercise that path.
+    #[rustfmt::skip]
+    let missing_required: &[u8] = &[
+        0x38, 0x3a,
+        0x41,
+        0x01,                   // 1 entry
+            0x2d,
+            0x53, 0x01, 0x61,
+            0x43, 0x01,
+    ];
+    let err = from_wxf::<TwoOrThree>(missing_required).expect_err("missing `b` should error");
+    let msg = format!("{}", err);
+    assert!(msg.contains("\"b\""), "error should mention the missing key: {}", msg);
 }

@@ -349,22 +349,42 @@ fn parse_dotted_index_path(p: &str, span: Span) -> TokenStream {
 // Enums
 //==============================================================================
 
+// Wire format: each variant becomes an Association keyed by `"Enum"`
+// (variant name as a String) and optionally `"Data"` (the variant's payload
+// — a List for tuple variants, an Association for struct variants):
+//
+//   Origin              ↔ <|"Enum" -> "Origin"|>
+//   Square(2.5)         ↔ <|"Enum" -> "Square", "Data" -> {2.5}|>
+//   Rect(1.0, 2.0)      ↔ <|"Enum" -> "Rect",   "Data" -> {1.0, 2.0}|>
+//   Circle{radius:3.0}  ↔ <|"Enum" -> "Circle", "Data" -> <|"radius" -> 3.0|>|>
+//
+// `"Enum"` is always the first entry on the wire (we emit it first; the
+// deserializer requires it in that position).
 fn expand_enum(name: &syn::Ident, data: &DataEnum) -> Result<TokenStream> {
     let mut arms = Vec::with_capacity(data.variants.len());
     for v in &data.variants {
-        let v_attrs = parse_container_attrs(&v.attrs)?;
+        let _v_attrs = parse_container_attrs(&v.attrs)?; // reserved for future #[wolfram(rename)] etc.
         let v_name = &v.ident;
-        let v_symbol = qualify_symbol(&v_name.to_string(), &v_attrs);
+        let v_str = v_name.to_string();
         match &v.fields {
             Fields::Unit => {
                 arms.push(quote! {
                     #name :: #v_name => {
-                        __s.serialize_symbol(#v_symbol)?;
+                        let __entries: &[(
+                            &dyn ::wolfram_serializer::ToWolfram,
+                            &dyn ::wolfram_serializer::ToWolfram,
+                            bool,
+                        )] = &[
+                            (&"Enum" as &dyn ::wolfram_serializer::ToWolfram,
+                             &#v_str as &dyn ::wolfram_serializer::ToWolfram,
+                             false),
+                        ];
+                        __s.serialize_association(__entries)?;
                     }
                 });
             }
             Fields::Unnamed(unnamed) => {
-                // Bind each tuple element to a synthetic ident `__0`, `__1`, …
+                // Bind each tuple element to a synthetic ident `__bind_0`, …
                 let bindings: Vec<syn::Ident> = (0..unnamed.unnamed.len())
                     .map(|i| format_ident!("__bind_{}", i))
                     .collect();
@@ -382,18 +402,26 @@ fn expand_enum(name: &syn::Ident, data: &DataEnum) -> Result<TokenStream> {
                 arms.push(quote! {
                     #name :: #v_name ( #(#bindings),* ) => {
                         #(#preambles)*
-                        let __args: &[&dyn ::wolfram_serializer::ToWolfram] = &[ #(#args),* ];
-                        let __head = ::wolfram_serializer::__derive_support::HeadSymbol(#v_symbol);
-                        __s.serialize_function(
-                            &__head as &dyn ::wolfram_serializer::ToWolfram,
-                            __args,
-                        )?;
+                        let __data_args: &[&dyn ::wolfram_serializer::ToWolfram] = &[ #(#args),* ];
+                        let __data_list =
+                            ::wolfram_serializer::__derive_support::ListThunk(__data_args);
+                        let __entries: &[(
+                            &dyn ::wolfram_serializer::ToWolfram,
+                            &dyn ::wolfram_serializer::ToWolfram,
+                            bool,
+                        )] = &[
+                            (&"Enum" as &dyn ::wolfram_serializer::ToWolfram,
+                             &#v_str as &dyn ::wolfram_serializer::ToWolfram,
+                             false),
+                            (&"Data" as &dyn ::wolfram_serializer::ToWolfram,
+                             &__data_list as &dyn ::wolfram_serializer::ToWolfram,
+                             false),
+                        ];
+                        __s.serialize_association(__entries)?;
                     }
                 });
             }
             Fields::Named(named) => {
-                // Bind each named field; emit Association of fields wrapped
-                // in Function[Symbol("Global`VariantName"), Association].
                 let bindings: Vec<&syn::Ident> = named
                     .named
                     .iter()
@@ -421,20 +449,26 @@ fn expand_enum(name: &syn::Ident, data: &DataEnum) -> Result<TokenStream> {
                 arms.push(quote! {
                     #name :: #v_name { #(#bindings),* } => {
                         #(#preambles)*
-                        let __entries: &[(
+                        let __data_entries: &[(
                             &dyn ::wolfram_serializer::ToWolfram,
                             &dyn ::wolfram_serializer::ToWolfram,
                             bool,
                         )] = &[ #(#entries),* ];
-                        let __inner = ::wolfram_serializer::__derive_support::AssocThunk(__entries);
-                        let __args: &[&dyn ::wolfram_serializer::ToWolfram] = &[
-                            &__inner as &dyn ::wolfram_serializer::ToWolfram,
+                        let __data_assoc =
+                            ::wolfram_serializer::__derive_support::AssocThunk(__data_entries);
+                        let __entries: &[(
+                            &dyn ::wolfram_serializer::ToWolfram,
+                            &dyn ::wolfram_serializer::ToWolfram,
+                            bool,
+                        )] = &[
+                            (&"Enum" as &dyn ::wolfram_serializer::ToWolfram,
+                             &#v_str as &dyn ::wolfram_serializer::ToWolfram,
+                             false),
+                            (&"Data" as &dyn ::wolfram_serializer::ToWolfram,
+                             &__data_assoc as &dyn ::wolfram_serializer::ToWolfram,
+                             false),
                         ];
-                        let __head = ::wolfram_serializer::__derive_support::HeadSymbol(#v_symbol);
-                        __s.serialize_function(
-                            &__head as &dyn ::wolfram_serializer::ToWolfram,
-                            __args,
-                        )?;
+                        __s.serialize_association(__entries)?;
                     }
                 });
             }
