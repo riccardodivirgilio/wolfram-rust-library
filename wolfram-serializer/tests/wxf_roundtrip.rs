@@ -122,14 +122,16 @@ fn empty_function() {
     roundtrip(Expr::list(vec![]));
 }
 
-// `Vec<T>` direct serialization: numeric T → NumericArray; u8 → ByteArray.
+// `Vec<T>` direct serialization: numeric `T` → `NumericArray`; `u8` → `ByteArray`.
+// These blanket impls share their wire-format logic with the
+// `#[derive(ToWolfram)]` macro — both call into the same low-level
+// `Serializer::serialize_numeric_array` / `serialize_byte_array` methods.
 
 #[test]
 fn vec_u8_serializes_as_byte_array() {
     let bytes = wolfram_serializer::export(&vec![1u8, 2, 3, 0xff], wolfram_serializer::Format::Wxf)
         .unwrap();
     let parsed = wolfram_serializer::import(&bytes, wolfram_serializer::Format::Wxf).unwrap();
-    // Importing brings it back as ExprKind::ByteArray:
     assert!(matches!(parsed.kind(), wolfram_expr::ExprKind::ByteArray(_)));
     assert_eq!(parsed.try_as_byte_array().unwrap().as_slice(), &[1u8, 2, 3, 0xff]);
 }
@@ -143,6 +145,16 @@ fn vec_i32_serializes_as_numeric_array() {
     assert_eq!(arr.data_type(), NumericArrayDataType::Integer32);
     assert_eq!(arr.dimensions(), &[4]);
     assert_eq!(arr.try_as_slice::<i32>(), Some([10, 20, 30, 40].as_slice()));
+}
+
+#[test]
+fn vec_f64_serializes_as_numeric_array() {
+    let bytes = wolfram_serializer::export(&vec![1.5f64, 2.5, 3.5], wolfram_serializer::Format::Wxf)
+        .unwrap();
+    let parsed = wolfram_serializer::import(&bytes, wolfram_serializer::Format::Wxf).unwrap();
+    let arr = parsed.try_as_numeric_array().expect("expected NumericArray");
+    assert_eq!(arr.data_type(), NumericArrayDataType::Real64);
+    assert_eq!(arr.try_as_slice::<f64>(), Some([1.5, 2.5, 3.5].as_slice()));
 }
 
 #[test]
@@ -174,16 +186,6 @@ fn packed_array_complex64() {
         &[Complex64::new(1.5, -2.5), Complex64::new(0.0, 1.0)],
     );
     roundtrip(Expr::from(arr));
-}
-
-#[test]
-fn vec_f64_serializes_as_numeric_array() {
-    let bytes = wolfram_serializer::export(&vec![1.5f64, 2.5, 3.5], wolfram_serializer::Format::Wxf)
-        .unwrap();
-    let parsed = wolfram_serializer::import(&bytes, wolfram_serializer::Format::Wxf).unwrap();
-    let arr = parsed.try_as_numeric_array().expect("expected NumericArray");
-    assert_eq!(arr.data_type(), NumericArrayDataType::Real64);
-    assert_eq!(arr.try_as_slice::<f64>(), Some([1.5, 2.5, 3.5].as_slice()));
 }
 
 #[test]

@@ -158,6 +158,13 @@ impl<Tag: ArrayTag> ArrayBuf<Tag> {
         let bytes = self.as_bytes();
         let elem_size = std::mem::size_of::<T>();
         debug_assert_eq!(bytes.len() % elem_size, 0);
+        // The empty case must be handled separately: `bytes.as_ptr()` for an
+        // empty `Vec<u8>` is u8-aligned (just dangling), but `*const T` for a
+        // zero-length slice still requires a T-aligned pointer per
+        // `from_raw_parts`'s safety preconditions.
+        if bytes.is_empty() {
+            return Some(&[]);
+        }
         // SAFETY: tag matches T, so the bytes were produced from a `[T]`.
         Some(unsafe {
             std::slice::from_raw_parts(bytes.as_ptr() as *const T, bytes.len() / elem_size)

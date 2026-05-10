@@ -13,16 +13,33 @@
 #![warn(missing_docs)]
 
 pub mod consumer;
+pub mod from_wolfram;
 pub mod serializer;
 pub mod wl;
 pub mod wxf;
 
+#[doc(hidden)]
+pub mod __derive_support {
+    //! Re-export of the `derive_support` module under a `__`-prefixed name.
+    //!
+    //! Hidden from rustdoc and not part of the stable API; only generated
+    //! code from `#[derive(ToWolfram)]` / `#[derive(FromWolfram)]` should
+    //! reference items here.
+    pub use crate::derive_support::*;
+}
+mod derive_support;
+
 use std::io::Write;
 
 use wolfram_expr::Expr;
+pub use wolfram_expr::NumericArrayDataType;
 
 pub use crate::consumer::{ExprConsumer, WolframConsumer};
+pub use crate::from_wolfram::FromWolfram;
 pub use crate::serializer::{Serializer, ToWolfram};
+// Procedural derives — same names as the traits, resolved by Rust's separate
+// macro / type namespaces.
+pub use wolfram_serializer_macros::{FromWolfram, ToWolfram};
 
 /// Output format selector for [`export`] / [`import`].
 ///
@@ -74,6 +91,18 @@ pub enum Error {
     InvalidWxf(String),
     /// A consumer rejected a value with a domain-specific error.
     Consumer(String),
+    /// Type mismatch during typed deserialization via [`FromWolfram`].
+    /// `path` is a dotted accessor (e.g. `"Frame.payload"`); `expected` and
+    /// `got` describe the WXF / `ExprKind` shape the deserializer wanted vs.
+    /// what it found.
+    Deserialize {
+        /// Field path threaded by the derived `FromWolfram` impl.
+        path: String,
+        /// Human-readable description of the expected wire shape.
+        expected: &'static str,
+        /// Human-readable description of the actual wire shape encountered.
+        got: String,
+    },
 }
 
 impl std::fmt::Display for Error {
@@ -86,6 +115,15 @@ impl std::fmt::Display for Error {
             ),
             Error::InvalidWxf(msg) => write!(f, "invalid WXF: {}", msg),
             Error::Consumer(msg) => write!(f, "consumer error: {}", msg),
+            Error::Deserialize {
+                path,
+                expected,
+                got,
+            } => write!(
+                f,
+                "FromWolfram: at {:?}: expected {}, got {}",
+                path, expected, got
+            ),
         }
     }
 }
@@ -133,6 +171,20 @@ where
         }
         Format::WxfCompressed(level) => wxf::serialize_compressed(value, writer, level),
     }
+}
+
+/// Serialize `value` to WXF bytes (uncompressed). Convenience shim over
+/// [`export(value, Format::Wxf)`][export].
+pub fn to_wxf<T: ToWolfram + ?Sized>(value: &T) -> Result<Vec<u8>, Error> {
+    export(value, Format::Wxf)
+}
+
+/// Deserialize WXF bytes into a typed `T` via [`FromWolfram`]. Reads the wire
+/// stream into an intermediate [`Expr`], then dispatches to
+/// `<T as FromWolfram>::from_wolfram`.
+pub fn from_wxf<T: FromWolfram>(bytes: &[u8]) -> Result<T, Error> {
+    let expr = import(bytes, Format::Wxf)?;
+    T::from_wolfram(&expr)
 }
 
 /// Deserialize `bytes` using `format`, returning an [`Expr`]. Uses the default

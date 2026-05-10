@@ -4,6 +4,7 @@ resolver = "2"
 members = [
     "wolfram-expr",
     "wolfram-serializer",
+    "wolfram-serializer-macros",
     "wstp",
     "wstp-sys",
     "wolfram-library-link",
@@ -19,6 +20,7 @@ members = [
 default-members = [
     "wolfram-expr",
     "wolfram-serializer",
+    "wolfram-serializer-macros",
     "wstp",
     "wolfram-library-link",
     "wolfram-library-link-macros",

@@ -3,8 +3,8 @@
 
 use crate::Error;
 use wolfram_expr::{
-    ArrayBuf, Association, Expr, ExprKind, NumericArray, NumericArrayDataType,
-    NumericArrayElement, PackedArray, PackedArrayDataType, Symbol,
+    ArrayBuf, Association, Expr, ExprKind, NumericArray, NumericArrayDataType, PackedArray,
+    PackedArrayDataType, Symbol,
 };
 use wolfram_expr::{BigInteger, BigReal};
 
@@ -150,76 +150,115 @@ impl<T: ToWolfram + ?Sized> ToWolfram for Box<T> {
     }
 }
 
-// `Vec<u8>` and `[u8]` serialize as a `ByteArray` token — Wolfram's idiomatic
-// "byte buffer" representation, distinct from a `List` of unsigned 8-bit integers.
+//==============================================================================
+// Container blanket impls
+//==============================================================================
+//
+// Two groups:
+//
+// 1. **Uniform wire shape** (`Option<T>`, `HashMap`, `BTreeMap`, `()`) — these
+//    serialize the same way regardless of `T`, so a single blanket impl works.
+//
+// 2. **Per-primitive specialization for `Vec<T>` and `[T]`** — `Vec<u8>` →
+//    ByteArray, `Vec<i32>` → 1-D NumericArray<Int32>, etc. Stamped by the
+//    `impl_vec_numeric!` macro_rules below; the wire bytes match what the
+//    `#[derive(ToWolfram)]` macro emits at field sites for the same types
+//    (both paths bottom out in the same `Serializer::serialize_*` calls).
+//    `Vec<T>` for non-primitive `T` deliberately has no blanket impl —
+//    inside a derived struct's field the macro emits a `Function[List, …]`
+//    construction; standalone, you'd need to wrap in a derived struct or use
+//    `wolfram_expr::NumericArray::from_slice` / `ByteArray::from` directly.
+
+// `Vec<u8>` and `[u8]` → `ByteArray` token.
 impl ToWolfram for Vec<u8> {
     fn serialize(&self, s: &mut dyn Serializer) -> Result<(), Error> {
         s.serialize_byte_array(self)
     }
 }
-
 impl ToWolfram for [u8] {
     fn serialize(&self, s: &mut dyn Serializer) -> Result<(), Error> {
         s.serialize_byte_array(self)
     }
 }
 
-// `Vec<T>` and `[T]` for *other* numeric types (the rest of [`NumericArrayElement`]
-// — i8, i16, i32, i64, u16, u32, u64, f32, f64) serialize as a 1-dimensional
-// [`NumericArray`] tagged with the matching element type.
-//
-// Heterogeneous / non-numeric vectors (Vec<Expr>, Vec<String>, Vec<MyStruct>, …)
-// are intentionally *not* implemented — they have no faithful NumericArray
-// representation, so writing `vec![expr1, expr2].serialize(s)` is a compile
-// error. Build a list explicitly via `Expr::list(...)` or `Expr::normal(...)`.
-//
-// Zero-copy: bytes flow directly from the user's `Vec<T>` storage into the
-// serializer's writer. No intermediate `NumericArray` is allocated.
-impl<T: VecAsNumericArray> ToWolfram for Vec<T> {
+// `Vec<T>` and `[T]` for the 9 numeric primitives that aren't `u8`.
+// Zero-copy: bytes flow direct from the user's `Vec<T>` storage to the wire.
+macro_rules! impl_vec_numeric {
+    ($($t:ty => $variant:ident),+ $(,)?) => {
+        $(
+            impl ToWolfram for [$t] {
+                fn serialize(&self, s: &mut dyn Serializer) -> Result<(), Error> {
+                    // SAFETY: `$t` is a numeric primitive — the bytes of a `&[$t]`
+                    // are a valid little-endian flat buffer for that element type.
+                    let bytes: &[u8] = unsafe {
+                        ::core::slice::from_raw_parts(
+                            self.as_ptr() as *const u8,
+                            ::core::mem::size_of::<$t>() * self.len(),
+                        )
+                    };
+                    s.serialize_numeric_array(
+                        NumericArrayDataType::$variant,
+                        &[self.len()],
+                        bytes,
+                    )
+                }
+            }
+
+            impl ToWolfram for Vec<$t> {
+                fn serialize(&self, s: &mut dyn Serializer) -> Result<(), Error> {
+                    self.as_slice().serialize(s)
+                }
+            }
+        )+
+    };
+}
+
+impl_vec_numeric!(
+    i8  => Integer8,
+    i16 => Integer16,
+    i32 => Integer32,
+    i64 => Integer64,
+    u16 => UnsignedInteger16,
+    u32 => UnsignedInteger32,
+    u64 => UnsignedInteger64,
+    f32 => Real32,
+    f64 => Real64,
+);
+
+impl ToWolfram for () {
     fn serialize(&self, s: &mut dyn Serializer) -> Result<(), Error> {
-        self.as_slice().serialize(s)
+        s.serialize_symbol("System`Null")
     }
 }
 
-impl<T: VecAsNumericArray> ToWolfram for [T] {
+impl<T: ToWolfram> ToWolfram for Option<T> {
     fn serialize(&self, s: &mut dyn Serializer) -> Result<(), Error> {
-        // SAFETY: T is sealed `NumericArrayElement` (primitive numeric type),
-        // so the bytes are a valid little-endian flat buffer for T::TYPE.
-        let bytes: &[u8] = unsafe {
-            std::slice::from_raw_parts(self.as_ptr() as *const u8, std::mem::size_of_val(self))
-        };
-        s.serialize_numeric_array(T::TYPE, &[self.len()], bytes)
+        match self {
+            Some(v) => v.serialize(s),
+            None => s.serialize_symbol("System`Null"),
+        }
     }
 }
 
-/// Sealed marker — types valid as the element type of a `Vec<T>`/`[T]` that
-/// serializes as a [`NumericArray`]. The set is exactly
-/// [`NumericArrayElement`] minus `u8` (which serializes as a [`ByteArray`]
-/// via the dedicated `Vec<u8>`/`[u8]` impls above).
-pub trait VecAsNumericArray: NumericArrayElement + vec_as_numeric_sealed::Sealed {}
-
-mod vec_as_numeric_sealed {
-    pub trait Sealed {}
-    impl Sealed for i8 {}
-    impl Sealed for i16 {}
-    impl Sealed for i32 {}
-    impl Sealed for i64 {}
-    impl Sealed for u16 {}
-    impl Sealed for u32 {}
-    impl Sealed for u64 {}
-    impl Sealed for f32 {}
-    impl Sealed for f64 {}
+impl<K: ToWolfram, V: ToWolfram, S> ToWolfram for std::collections::HashMap<K, V, S> {
+    fn serialize(&self, s: &mut dyn Serializer) -> Result<(), Error> {
+        let entries: Vec<(&dyn ToWolfram, &dyn ToWolfram, bool)> = self
+            .iter()
+            .map(|(k, v)| (k as &dyn ToWolfram, v as &dyn ToWolfram, false))
+            .collect();
+        s.serialize_association(&entries)
+    }
 }
 
-impl VecAsNumericArray for i8 {}
-impl VecAsNumericArray for i16 {}
-impl VecAsNumericArray for i32 {}
-impl VecAsNumericArray for i64 {}
-impl VecAsNumericArray for u16 {}
-impl VecAsNumericArray for u32 {}
-impl VecAsNumericArray for u64 {}
-impl VecAsNumericArray for f32 {}
-impl VecAsNumericArray for f64 {}
+impl<K: ToWolfram, V: ToWolfram> ToWolfram for std::collections::BTreeMap<K, V> {
+    fn serialize(&self, s: &mut dyn Serializer) -> Result<(), Error> {
+        let entries: Vec<(&dyn ToWolfram, &dyn ToWolfram, bool)> = self
+            .iter()
+            .map(|(k, v)| (k as &dyn ToWolfram, v as &dyn ToWolfram, false))
+            .collect();
+        s.serialize_association(&entries)
+    }
+}
 
 //==============================================================================
 // wolfram-expr type impls
