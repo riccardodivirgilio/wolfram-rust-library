@@ -24,7 +24,7 @@ pub use self::cursor::WxfCursor;
 /// Lays out the header bytes directly to `writer`, then wraps `writer` in a
 /// [`ZlibEncoder`] for the payload — the WXF token stream is written through
 /// the encoder uncompressed-side and emerges deflated on the wire-side.
-pub fn serialize_compressed<T, W>(
+pub(crate) fn serialize_compressed<T, W>(
     value: &T,
     writer: &mut W,
     level: CompressionLevel,

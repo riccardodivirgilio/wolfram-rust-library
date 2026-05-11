@@ -28,9 +28,6 @@ pub mod __derive_support {
 }
 mod derive_support;
 
-use std::io::Write;
-
-use wolfram_expr::Expr;
 pub use wolfram_expr::NumericArrayDataType;
 
 pub use crate::from_wolfram::FromWolfram;
@@ -41,6 +38,9 @@ pub use crate::wxf::cursor::WxfCursor;
 pub use wolfram_serializer_macros::{FromWolfram, ToWolfram};
 
 /// Output format selector for [`serialize`] / [`deserialize`].
+///
+/// The default ([`Format::Wxf`]) is what you get when you pass `None` as the
+/// `format` argument to [`serialize`] / [`deserialize`].
 ///
 /// `deserialize` only needs `Format::Wxf` — the WXF wire header (`8:` vs `8C:`)
 /// self-describes whether the payload is compressed, so deserialization
@@ -53,6 +53,13 @@ pub enum Format {
     Wxf,
     /// WXF binary wire format, zlib-compressed (`8C:` header) at the given level.
     WxfCompressed(CompressionLevel),
+}
+
+impl Default for Format {
+    /// `Format::Wxf` — uncompressed WXF, the canonical default.
+    fn default() -> Self {
+        Format::Wxf
+    }
 }
 
 /// zlib compression level used by [`Format::WxfCompressed`].
@@ -141,61 +148,63 @@ impl From<std::io::Error> for Error {
 }
 
 //==============================================================================
-// Top-level API
+// Top-level API — `serialize` and `deserialize` are the only entry points.
 //==============================================================================
 
 /// Serialize `value` using `format`, returning the bytes.
-pub fn serialize<T: ToWolfram + ?Sized>(value: &T, format: Format) -> Result<Vec<u8>, Error> {
-    let mut out = Vec::new();
-    serialize_to(value, format, &mut out)?;
+///
+/// `format` is `impl Into<Option<Format>>`: pass `None` for the default
+/// ([`Format::Wxf`] — uncompressed WXF), or any [`Format`] variant directly
+/// for an explicit override.
+///
+/// ```ignore
+/// let bytes = serialize(&expr, None)?;                            // default: Wxf
+/// let bytes = serialize(&expr, Format::WxfCompressed(level))?;    // explicit override
+/// ```
+pub fn serialize<T: ToWolfram + ?Sized>(
+    value: &T,
+    format: impl Into<Option<Format>>,
+) -> Result<Vec<u8>, Error> {
+    let mut out: Vec<u8> = Vec::new();
+    match format.into().unwrap_or_default() {
+        Format::Wl => {
+            let mut s = wl::WlSerializer::new(&mut out);
+            value.serialize(&mut s)?;
+        }
+        Format::Wxf => {
+            let mut s = wxf::WxfSerializer::new(&mut out)?;
+            value.serialize(&mut s)?;
+        }
+        Format::WxfCompressed(level) => {
+            wxf::serialize_compressed(value, &mut out, level)?;
+        }
+    }
     Ok(out)
 }
 
-/// Serialize `value` using `format`, writing to `writer`.
-pub fn serialize_to<T, W>(value: &T, format: Format, writer: &mut W) -> Result<(), Error>
-where
-    T: ToWolfram + ?Sized,
-    W: Write,
-{
-    match format {
-        Format::Wl => {
-            let mut s = wl::WlSerializer::new(writer);
-            value.serialize(&mut s)
-        }
-        Format::Wxf => {
-            let mut s = wxf::WxfSerializer::new(writer)?;
-            value.serialize(&mut s)
-        }
-        Format::WxfCompressed(level) => wxf::serialize_compressed(value, writer, level),
-    }
-}
-
-/// Serialize `value` to WXF bytes (uncompressed). Convenience shim over
-/// [`serialize(value, Format::Wxf)`][serialize].
-pub fn to_wxf<T: ToWolfram + ?Sized>(value: &T) -> Result<Vec<u8>, Error> {
-    serialize(value, Format::Wxf)
-}
-
-/// Deserialize WXF bytes directly into a typed `T` via [`FromWolfram`].
-/// Streaming: no intermediate [`Expr`] tree is built unless `T == Expr` (in
-/// which case [`Expr::from_cursor`][FromWolfram::from_cursor] does the
-/// equivalent recursive descent).
-pub fn from_wxf<T: FromWolfram>(bytes: &[u8]) -> Result<T, Error> {
-    let mut cursor = WxfCursor::new(bytes)?;
-    T::from_cursor(&mut cursor)
-}
-
-/// Deserialize `bytes` using `format`, returning an [`Expr`]. Drives a
-/// [`WxfCursor`] through `<Expr as FromWolfram>::from_cursor` — the same
-/// recursive descent that the old `ExprConsumer` produced.
+/// Deserialize `bytes` using `format` into a typed `T` via [`FromWolfram`].
+///
+/// Use `T = Expr` for an untyped tree; specify any other [`FromWolfram`] type
+/// — including types produced by `#[derive(FromWolfram)]` — for streaming
+/// typed deserialization (no intermediate [`Expr`] tree).
+///
+/// `format` is `impl Into<Option<Format>>`: pass `None` for the default
+/// ([`Format::Wxf`]), or any [`Format`] variant directly for an explicit
+/// override. The WXF wire header (`8:` vs `8C:`) self-describes whether the
+/// payload is compressed, so `Format::Wxf` and `Format::WxfCompressed(_)`
+/// both decode through the same cursor.
 ///
 /// `format = Format::Wl` returns [`Error::UnsupportedImportFormat`] — text WL
 /// parsing is not implemented in V1.
-pub fn deserialize(bytes: &[u8], format: Format) -> Result<Expr, Error> {
-    match format {
+pub fn deserialize<T: FromWolfram>(
+    bytes: &[u8],
+    format: impl Into<Option<Format>>,
+) -> Result<T, Error> {
+    match format.into().unwrap_or_default() {
         Format::Wl => Err(Error::UnsupportedImportFormat),
-        // The wire header (`8:` vs `8C:`) self-describes whether the payload
-        // is compressed, so both variants route through the same cursor.
-        Format::Wxf | Format::WxfCompressed(_) => from_wxf::<Expr>(bytes),
+        Format::Wxf | Format::WxfCompressed(_) => {
+            let mut cursor = WxfCursor::new(bytes)?;
+            T::from_cursor(&mut cursor)
+        }
     }
 }

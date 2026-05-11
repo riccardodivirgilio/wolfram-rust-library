@@ -8,7 +8,7 @@ use wolfram_serializer::{serialize, deserialize, CompressionLevel, Format};
 
 fn roundtrip(expr: Expr) {
     let bytes = serialize(&expr, Format::Wxf).expect("serialize Wxf");
-    let parsed = deserialize(&bytes, Format::Wxf).expect("deserialize Wxf");
+    let parsed: Expr = deserialize(&bytes, Format::Wxf).expect("deserialize Wxf");
     assert_eq!(parsed, expr, "roundtrip mismatch");
 }
 
@@ -131,7 +131,7 @@ fn empty_function() {
 fn vec_u8_serializes_as_byte_array() {
     let bytes = wolfram_serializer::serialize(&vec![1u8, 2, 3, 0xff], wolfram_serializer::Format::Wxf)
         .unwrap();
-    let parsed = wolfram_serializer::deserialize(&bytes, wolfram_serializer::Format::Wxf).unwrap();
+    let parsed: Expr = wolfram_serializer::deserialize(&bytes, wolfram_serializer::Format::Wxf).unwrap();
     assert!(matches!(parsed.kind(), wolfram_expr::ExprKind::ByteArray(_)));
     assert_eq!(parsed.try_as_byte_array().unwrap().as_slice(), &[1u8, 2, 3, 0xff]);
 }
@@ -140,7 +140,7 @@ fn vec_u8_serializes_as_byte_array() {
 fn vec_i32_serializes_as_numeric_array() {
     let bytes = wolfram_serializer::serialize(&vec![10i32, 20, 30, 40], wolfram_serializer::Format::Wxf)
         .unwrap();
-    let parsed = wolfram_serializer::deserialize(&bytes, wolfram_serializer::Format::Wxf).unwrap();
+    let parsed: Expr = wolfram_serializer::deserialize(&bytes, wolfram_serializer::Format::Wxf).unwrap();
     let arr = parsed.try_as_numeric_array().expect("expected NumericArray");
     assert_eq!(arr.data_type(), NumericArrayDataType::Integer32);
     assert_eq!(arr.dimensions(), &[4]);
@@ -151,7 +151,7 @@ fn vec_i32_serializes_as_numeric_array() {
 fn vec_f64_serializes_as_numeric_array() {
     let bytes = wolfram_serializer::serialize(&vec![1.5f64, 2.5, 3.5], wolfram_serializer::Format::Wxf)
         .unwrap();
-    let parsed = wolfram_serializer::deserialize(&bytes, wolfram_serializer::Format::Wxf).unwrap();
+    let parsed: Expr = wolfram_serializer::deserialize(&bytes, wolfram_serializer::Format::Wxf).unwrap();
     let arr = parsed.try_as_numeric_array().expect("expected NumericArray");
     assert_eq!(arr.data_type(), NumericArrayDataType::Real64);
     assert_eq!(arr.try_as_slice::<f64>(), Some([1.5, 2.5, 3.5].as_slice()));
@@ -195,13 +195,13 @@ fn empty_association() {
 
 #[test]
 fn rejects_truncated_header() {
-    assert!(deserialize(b"", Format::Wxf).is_err());
-    assert!(deserialize(b"8", Format::Wxf).is_err());
+    assert!(deserialize::<Expr>(b"", Format::Wxf).is_err());
+    assert!(deserialize::<Expr>(b"8", Format::Wxf).is_err());
 }
 
 #[test]
 fn rejects_wrong_version() {
-    assert!(deserialize(b"7:", Format::Wxf).is_err());
+    assert!(deserialize::<Expr>(b"7:", Format::Wxf).is_err());
 }
 #[test]
 fn big_integer_roundtrip() {

@@ -1,6 +1,6 @@
 //! [`FromWolfram`] trait — pull-based typed deserialization from a [`WxfCursor`].
 //!
-//! Top-level entry: [`crate::from_wxf`] constructs a [`WxfCursor`] over the
+//! Top-level entry: [`crate::deserialize`] constructs a [`WxfCursor`] over the
 //! raw bytes and calls `<T as FromWolfram>::from_cursor(&mut cursor)`. Each
 //! impl reads exactly the tokens its wire shape requires — no intermediate
 //! [`Expr`] tree, no visitor / consumer dispatch.
