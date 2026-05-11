@@ -3,6 +3,8 @@
 
 use std::io::Write;
 
+use base64::engine::general_purpose::STANDARD as BASE64;
+use base64::Engine;
 use wolfram_expr::{NumericArrayDataType, PackedArrayDataType};
 use wolfram_expr::{BigInteger, BigReal};
 
@@ -18,41 +20,6 @@ impl<'w, W: Write> WlSerializer<'w, W> {
     /// Construct a new serializer over `writer`.
     pub fn new(writer: &'w mut W) -> Self {
         WlSerializer { out: writer }
-    }
-
-    fn write_byte_array_base64(&mut self, bytes: &[u8]) -> Result<(), Error> {
-        // Manual base64 (RFC 4648) — small enough to inline; avoids a base64 dep.
-        const ALPHABET: &[u8; 64] =
-            b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-        let mut out = Vec::with_capacity((bytes.len() + 2) / 3 * 4);
-        for chunk in bytes.chunks(3) {
-            match chunk.len() {
-                3 => {
-                    let n = ((chunk[0] as u32) << 16) | ((chunk[1] as u32) << 8) | (chunk[2] as u32);
-                    out.push(ALPHABET[((n >> 18) & 0x3F) as usize]);
-                    out.push(ALPHABET[((n >> 12) & 0x3F) as usize]);
-                    out.push(ALPHABET[((n >> 6) & 0x3F) as usize]);
-                    out.push(ALPHABET[(n & 0x3F) as usize]);
-                }
-                2 => {
-                    let n = ((chunk[0] as u32) << 16) | ((chunk[1] as u32) << 8);
-                    out.push(ALPHABET[((n >> 18) & 0x3F) as usize]);
-                    out.push(ALPHABET[((n >> 12) & 0x3F) as usize]);
-                    out.push(ALPHABET[((n >> 6) & 0x3F) as usize]);
-                    out.push(b'=');
-                }
-                1 => {
-                    let n = (chunk[0] as u32) << 16;
-                    out.push(ALPHABET[((n >> 18) & 0x3F) as usize]);
-                    out.push(ALPHABET[((n >> 12) & 0x3F) as usize]);
-                    out.push(b'=');
-                    out.push(b'=');
-                }
-                _ => unreachable!(),
-            }
-        }
-        self.out.write_all(&out)?;
-        Ok(())
     }
 }
 
@@ -92,7 +59,7 @@ impl<'w, W: Write> Serializer for WlSerializer<'w, W> {
 
     fn serialize_byte_array(&mut self, bytes: &[u8]) -> Result<(), Error> {
         self.out.write_all(b"ByteArray[\"")?;
-        self.write_byte_array_base64(bytes)?;
+        self.out.write_all(BASE64.encode(bytes).as_bytes())?;
         self.out.write_all(b"\"]")?;
         Ok(())
     }
