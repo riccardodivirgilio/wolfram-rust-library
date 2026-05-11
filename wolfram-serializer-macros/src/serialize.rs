@@ -68,15 +68,17 @@ fn expand_struct(
             })
         }
         Fields::Unnamed(unnamed) => {
-            // Tuple struct → emit Function[Symbol("Global`Name"), arg0, arg1, …]
-            let symbol = qualify_symbol(&name.to_string(), attrs);
+            // Tuple struct → emit Function[Symbol("System`List"), arg0, arg1, …].
+            // The head is fixed; tuple structs identify themselves by the
+            // positions and types of their data, not by a name on the wire.
+            let _ = attrs; // `#[wolfram(symbol = ...)]` ignored for tuple structs.
             let args = expand_unnamed_field_args(
                 unnamed.unnamed.iter().collect::<Vec<_>>().as_slice(),
                 quote! { self },
             )?;
             Ok(quote! {
                 #args
-                let __head = ::wolfram_serializer::__derive_support::HeadSymbol(#symbol);
+                let __head = ::wolfram_serializer::__derive_support::HeadSymbol("System`List");
                 __s.serialize_function(&__head as &dyn ::wolfram_serializer::ToWolfram, __args)?;
             })
         }

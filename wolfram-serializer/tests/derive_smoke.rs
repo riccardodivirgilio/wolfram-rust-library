@@ -96,8 +96,10 @@ fn point_tuple_struct_emits_function() {
     let bytes = serialize(&p, Format::Wxf).unwrap();
     let expr: Expr = deserialize(&bytes, Format::Wxf).unwrap();
     let normal = expr.try_as_normal().expect("Point should be Function[…]");
+    // Tuple structs share the head `System`List` — they're identified by
+    // their positional data, not by name.
     let head = normal.head().try_as_symbol().unwrap().as_str();
-    assert_eq!(head, "Global`Point");
+    assert_eq!(head, "System`List");
     assert_eq!(normal.elements().len(), 2);
 }
 

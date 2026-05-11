@@ -128,8 +128,11 @@ fn expand_struct(
             })
         }
         Fields::Unnamed(unnamed) => {
-            // Expect Function[Symbol("Global`Name"), arg0, arg1, ...]
-            let symbol = qualify_symbol(name_str, attrs);
+            // Tuple struct: expect Function[<head>, arg0, arg1, ...].
+            // The head is not validated — tuple structs identify themselves
+            // by the positions and types of their data, not by a name on the
+            // wire.
+            let _ = attrs; // `#[wolfram(symbol = ...)]` ignored for tuple structs.
             let fields: Vec<&syn::Field> = unnamed.unnamed.iter().collect();
             let arity = fields.len();
             let extracts = fields.iter().enumerate().map(|(i, f)| {
@@ -151,16 +154,7 @@ fn expand_struct(
                         ),
                     );
                 }
-                let __head = __c.read_symbol()?;
-                if __head.as_str() != #symbol {
-                    return ::core::result::Result::Err(
-                        ::wolfram_serializer::from_wolfram::err_at(
-                            #name_str,
-                            concat!("Function head ", stringify!(#symbol)),
-                            format!("Symbol({:?})", __head.as_str()),
-                        ),
-                    );
-                }
+                __c.skip()?; // discard head — any shape accepted
                 #(#extracts)*
                 ::core::result::Result::Ok(#name(#(#bindings),*))
             })
