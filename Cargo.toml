@@ -9,7 +9,11 @@ members = [
     "wstp-sys",
     "wolfram-library-link",
     "wolfram-library-link-sys",
-    "wolfram-library-link-macros",
+    "wolfram-export-macros",
+    "wolfram-export-core",
+    "wolfram-export-native",
+    "wolfram-export-wstp",
+    "wolfram-export-wxf",
     "xtask",
 ]
 
@@ -23,5 +27,6 @@ default-members = [
     "wolfram-serializer-macros",
     "wstp",
     "wolfram-library-link",
-    "wolfram-library-link-macros",
+    "wolfram-export-macros",
+    "wolfram-export-core",
 ]

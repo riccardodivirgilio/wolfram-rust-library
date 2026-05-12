@@ -1,12 +1,10 @@
 [package]
-name = "wolfram-library-link-macros"
-version = "0.2.10"
+name = "wolfram-export-macros"
+version = "0.1.0"
 license = "MIT OR Apache-2.0"
 edition = "2021"
 repository = "https://github.com/WolframResearch/wolfram-rust-library"
-description = "Procedural macros used by wolfram-library-link"
-
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+description = "Procedural macros for #[export_native], #[export_wstp], #[export_wxf]"
 
 [lib]
 proc-macro = true
@@ -18,5 +16,4 @@ quote = "1.0.14"
 
 [features]
 default = []
-
 automate-function-loading-boilerplate = []

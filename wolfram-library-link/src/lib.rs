@@ -247,6 +247,7 @@ pub mod docs;
 #[doc(inline)]
 pub use wolfram_expr as expr;
 pub use wolfram_library_link_sys as sys;
+#[cfg(feature = "wstp")]
 pub use wstp;
 
 
@@ -260,7 +261,7 @@ pub use self::macro_utils::exported_library_functions_association;
 
 
 pub use self::{
-    args::{FromArg, IntoArg, NativeFunction, WstpFunction},
+    args::{FromArg, IntoArg, NativeFunction},
     async_tasks::AsyncTaskObject,
     data_store::{DataStore, DataStoreNode, DataStoreNodeValue, Nodes},
     image::{ColorSpace, Image, ImageData, ImageType, Pixel, UninitImage},
@@ -270,6 +271,9 @@ pub use self::{
         NumericArrayType, UninitNumericArray,
     },
 };
+
+#[cfg(feature = "wstp")]
+pub use self::args::WstpFunction;
 
 // Re-export the new `wolfram-expr` portable value types under aliases that don't
 // shadow the existing wll types. Users wanting the WXF-portable forms can reach
@@ -289,6 +293,7 @@ use std::sync::Mutex;
 use once_cell::sync::Lazy;
 
 use wolfram_library_link_sys::mint;
+#[cfg(feature = "wstp")]
 use wstp::Link;
 
 pub(crate) use self::library_data::assert_main_thread;
@@ -340,7 +345,10 @@ use crate::expr::{Expr, ExprKind, Symbol};
 /// `#[init]` works by generating a definition for `WolframLibrary_initialize()`.
 ///
 /// [lib-init]: https://reference.wolfram.com/language/LibraryLink/tutorial/LibraryStructure.html#280210622
-pub use wolfram_library_link_macros::init;
+// Back-compat re-export: `#[wolfram_library_link::init]` now resolves to the
+// version in `wolfram-export-macros` (the new home for all #[export*]-related
+// proc-macros). Same call-site syntax as before.
+pub use wolfram_export_macros::init;
 
 
 /// Export the specified functions as native *LibraryLink* functions.
@@ -670,7 +678,12 @@ pub use wolfram_library_link_macros::init;
 /// ```wolfram
 /// LibraryFunctionLoad["...", "total_args_i64", LinkObject, LinkObject]
 /// ```
-pub use wolfram_library_link_macros::export;
+// Back-compat re-export: `#[wolfram_library_link::export]` and
+// `#[wolfram_library_link::export(wstp)]` both route through the
+// legacy-compat shim in `wolfram-export-macros::export`, which dispatches by
+// `wstp` keyword and forwards to the appropriate codegen. Same call-site
+// syntax as today.
+pub use wolfram_export_macros::export;
 
 const BACKTRACE_ENV_VAR: &str = "LIBRARY_LINK_RUST_BACKTRACE";
 
@@ -682,6 +695,7 @@ const BACKTRACE_ENV_VAR: &str = "LIBRARY_LINK_RUST_BACKTRACE";
 ///
 /// TODO: Specify and document what happens if the evaluation of `expr` triggers a
 ///       kernel abort (such as a `Throw[]` in the code).
+#[cfg(feature = "wstp")]
 pub fn evaluate(expr: &Expr) -> Expr {
     match try_evaluate(expr) {
         Ok(returned) => returned,
@@ -694,6 +708,7 @@ pub fn evaluate(expr: &Expr) -> Expr {
 
 /// Attempt to evaluate `expr`, returning an error if a WSTP transport error occurred
 /// or evaluation failed.
+#[cfg(feature = "wstp")]
 pub fn try_evaluate(expr: &Expr) -> Result<Expr, String> {
     with_link(|link: &mut Link| {
         // Send an EvaluatePacket['expr].
@@ -751,6 +766,7 @@ pub fn aborted() -> bool {
 
 // TODO: Instead of making these public, add new evaluate(..) alternative that
 //       takes a WstpExpr type.
+#[cfg(feature = "wstp")]
 fn process_wstp_link(link: &mut Link) -> Result<(), String> {
     assert_main_thread();
 
@@ -771,6 +787,7 @@ fn process_wstp_link(link: &mut Link) -> Result<(), String> {
 }
 
 /// Enforce exclusive access to the link returned by `getWSLINK()`.
+#[cfg(feature = "wstp")]
 fn with_link<F: FnOnce(&mut Link) -> R, R>(f: F) -> R {
     assert_main_thread();
 
@@ -918,7 +935,7 @@ fn bool_from_mbool(boole: sys::mbool) -> bool {
 /// ```
 ///
 /// [ref/LibraryFunctionLoad]: https://reference.wolfram.com/language/ref/LibraryFunctionLoad.html
-#[cfg(feature = "automate-function-loading-boilerplate")]
+#[cfg(all(feature = "automate-function-loading-boilerplate", feature = "wstp"))]
 #[macro_export]
 macro_rules! generate_loader {
     ($name:ident) => {

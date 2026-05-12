@@ -1,13 +1,15 @@
 use std::os::raw::c_int;
 
+#[cfg(feature = "wstp")]
 use wstp::{self, Link};
 
 use crate::{
     catch_panic::{call_and_catch_panic, CaughtPanic},
-    expr::{Expr, Symbol},
     sys::{self, MArgument, LIBRARY_NO_ERROR},
-    NativeFunction, WstpFunction,
+    NativeFunction,
 };
+#[cfg(feature = "wstp")]
+use crate::WstpFunction;
 
 /// Error codes returned by macro-generated wrapper code.
 ///
@@ -38,6 +40,7 @@ mod error_code {
 // WSTP helpers
 //==================
 
+#[cfg(feature = "wstp")]
 unsafe fn call_wstp_link_wolfram_library_function<
     F: FnOnce(&mut Link) + std::panic::UnwindSafe,
 >(
@@ -71,6 +74,7 @@ unsafe fn call_wstp_link_wolfram_library_function<
     }
 }
 
+#[cfg(feature = "wstp")]
 fn write_panic_failure_to_link(
     link: &mut Link,
     caught_panic: CaughtPanic,
@@ -159,6 +163,7 @@ pub unsafe fn call_native_wolfram_library_function<'a, F: NativeFunction<'a>>(
     sys::LIBRARY_NO_ERROR as c_int
 }
 
+#[cfg(feature = "wstp")]
 pub unsafe fn call_wstp_wolfram_library_function<
     F: WstpFunction + std::panic::UnwindSafe,
 >(
@@ -179,48 +184,19 @@ pub unsafe fn call_wstp_wolfram_library_function<
 // Automatic Loader
 //======================================
 
-pub enum LibraryLinkFunction {
-    Native {
-        name: &'static str,
-        /// # Implementation note on the type of this field
-        ///
-        /// In an ideal world, the type of this field would be something like
-        /// `ty: Box<dyn NativeFunction>`.
-        ///
-        /// Using `fn() -> _` as the type of this field is necessary to work around
-        /// the following constraints :
-        ///
-        /// * Instances of `LibraryLinkFunction` are constructed within a `static` context,
-        ///   so only operations that are allowed in a `static` context can be used.
-        ///
-        /// * Can't be `&'static dyn for<'a> NativeFunction<'a>>`
-        ///   - Doesn't work because it would require an intermediate `&'static fn(..)`
-        ///     value, which can only be derived from an explicit `static FUNC: fn(..)`,
-        ///     which in turn needs to be declared using explicit types for the function
-        ///     parameter and return types (`static FUNC: fn(_, _) -> _` is not allowed,
-        ///     because type inferrence doesn't work on static variables).
-        ///
-        /// * Can't be `Box<dyn for<'a> NativeFunction<'a>>`.
-        ///   - Doesn't work because `Box::new()` can't be used in a `static` context.
-        ///
-        /// * Can't be `fn() -> Box<dyn NativeFunction<'a>>` because the `'a` lifetime
-        ///   parameter can't be declared in any way.
-        ///
-        /// So in the end, we just call `NativeFunction::signature()` within `fn()`
-        /// that is constructed in the macro-generated code (and where the concrete
-        /// function type is still available) to avoid trying and failing to box up or
-        /// return the `NativeFunction` trait object.
-        signature: fn() -> Result<(Vec<Expr>, Expr), String>,
-    },
-    Wstp {
-        name: &'static str,
-    },
-}
+/// Inventory entry for a `#[export]`-marked function.
+///
+/// Now a type alias for [`wolfram_export_core::ExportEntry`]. The underlying
+/// type is shared across all three export modes (Native, Wstp, Wxf) so the
+/// `__wolfram_manifest__` symbol can see every entry regardless of which
+/// macro produced it.
+pub type LibraryLinkFunction = ::wolfram_export_core::ExportEntry;
 
-#[cfg(feature = "automate-function-loading-boilerplate")]
-inventory::collect!(LibraryLinkFunction);
+// The `inventory::collect!(ExportEntry)` declaration lives in
+// `wolfram-export-core`. Don't declare it again here — a duplicate collect!
+// would split the inventory.
 
-#[cfg(feature = "automate-function-loading-boilerplate")]
+#[cfg(all(feature = "automate-function-loading-boilerplate", feature = "wstp"))]
 pub unsafe fn load_library_functions_impl(
     lib_data: sys::WolframLibraryData,
     raw_link: wstp::sys::WSLINK,
@@ -439,128 +415,11 @@ pub unsafe fn load_library_functions_impl(
 ///
 /// [Association]: https://reference.wolfram.com/language/ref/Association.html
 /// [LibraryFunctionLoad]: https://reference.wolfram.com/language/ref/LibraryFunctionLoad.html
+// The manifest builder lives in `wolfram-export-core`. Re-export under the
+// historic name so existing callers (`wolfram_library_link::macro_utils::
+// exported_library_functions_association`) keep building.
 #[cfg(feature = "automate-function-loading-boilerplate")]
-pub fn exported_library_functions_association(
-    library: Option<std::path::PathBuf>,
-) -> Expr {
-    let library: std::path::PathBuf = library.unwrap_or_else(|| {
-        process_path::get_dylib_path()
-            .expect("unable to automatically determine Rust LibraryLink dynamic library file path. Suggestion: pass the library name or path to exported_library_functions_association(..)")
-    });
-
-    let mut fields = Vec::new();
-    let rule = Symbol::new("System`Rule");
-
-    for func in inventory::iter::<LibraryLinkFunction> {
-        let code = match func.loading_code(&library) {
-            Ok(code) => code,
-            // TODO: Generate a message? Return a Failure[..]? Doing nothing seems
-            //       reasonable too. This only currently fails for
-            //       `fn(&[MArgument], MArgument)` functions.
-            Err(_) => continue,
-        };
-
-        fields.push(Expr::normal(&rule, vec![Expr::string(func.name()), code]));
-    }
-
-    Expr::normal(Symbol::new("System`Association"), fields)
-}
-
-#[cfg_attr(
-    not(feature = "automate-function-loading-boilerplate"),
-    allow(dead_code)
-)]
-impl LibraryLinkFunction {
-    fn name(&self) -> &str {
-        match self {
-            LibraryLinkFunction::Native { name, .. } => name,
-            LibraryLinkFunction::Wstp { name } => name,
-        }
-    }
-
-    fn loading_code(&self, library: &std::path::PathBuf) -> Result<Expr, String> {
-        fn sys(name: &str) -> Symbol {
-            Symbol::new(&format!("System`{}", name))
-        }
-
-        let lib_func_load = sys("LibraryFunctionLoad");
-        let link_object = Expr::from(sys("LinkObject"));
-        let library = Expr::string(
-            library
-                .to_str()
-                .expect("unable to convert library file path to str"),
-        );
-
-        let code = match self {
-            LibraryLinkFunction::Native { name, signature } => {
-                let (args, ret) = signature()?;
-
-                Expr::normal(&lib_func_load, vec![
-                    library.clone(),
-                    Expr::string(*name),
-                    Expr::normal(sys("List"), args),
-                    ret,
-                ])
-            },
-            /*
-                With[{
-                    var = LibraryFunctionLoad[...]
-                },
-                    Function[
-                        (* Note:
-                            Set $Context and $ContextPath to force symbols sent across
-                            the LinkObject to contain the symbol context explicitly.
-                        *)
-                        Block[{$Context = "RustLinkWSTPPrivateContext`", $ContextPath = {}},
-                            var[##]
-                        ]
-                    ]
-                ]
-            */
-            LibraryLinkFunction::Wstp { name } => {
-                let load_call = Expr::normal(&lib_func_load, vec![
-                    library.clone(),
-                    Expr::string(*name),
-                    link_object.clone(),
-                    link_object,
-                ]);
-
-                let var = Expr::from(Symbol::new("RustLink`Private`wstpFunc"));
-
-                Expr::normal(sys("With"), vec![
-                    Expr::normal(sys("List"), vec![Expr::normal(sys("Set"), vec![
-                        var.clone(),
-                        load_call,
-                    ])]),
-                    Expr::normal(sys("Function"), vec![Expr::normal(
-                        sys("Block"),
-                        vec![
-                            Expr::normal(sys("List"), vec![
-                                // $Context = "RustLinkWSTPPrivateContext`"
-                                Expr::normal(sys("Set"), vec![
-                                    Expr::from(sys("$Context")),
-                                    Expr::string("RustLinkWSTPPrivateContext`"),
-                                ]),
-                                // $ContextPath = {}
-                                Expr::normal(sys("Set"), vec![
-                                    Expr::from(sys("$ContextPath")),
-                                    Expr::normal(sys("List"), vec![]),
-                                ]),
-                            ]),
-                            // var[##]
-                            Expr::normal(var, vec![Expr::normal(
-                                sys("SlotSequence"),
-                                vec![Expr::from(1)],
-                            )]),
-                        ],
-                    )]),
-                ])
-            },
-        };
-
-        Ok(code)
-    }
-}
+pub use ::wolfram_export_core::exported_library_functions_association;
 
 //======================================
 // Initialization

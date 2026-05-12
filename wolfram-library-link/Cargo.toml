@@ -20,11 +20,15 @@ include = [
 ]
 
 [dependencies]
-wolfram-library-link-macros    = { version = "0.2.10", path = "../wolfram-library-link-macros" }
+wolfram-export-macros          = { version = "0.1.0", path = "../wolfram-export-macros" }
 
 wolfram-library-link-sys       = { version = "0.2.10", path = "../wolfram-library-link-sys" }
+wolfram-export-core            = { version = "0.1.0", path = "../wolfram-export-core" }
 
-wstp         = { version = "0.2.8", path = "../wstp" }
+# `wstp` is an optional dep. Gating it behind a feature lets `wolfram-export-wxf`
+# (and any future consumer wanting MArgument-only support) depend on
+# `wolfram-library-link` without pulling the WSTP transport stack.
+wstp         = { version = "0.2.8", path = "../wstp", optional = true }
 wolfram-expr = { version = "0.2", path = "../wolfram-expr" }
 
 once_cell = "1.8.0"
@@ -38,11 +42,21 @@ process_path = { version = "0.1.3", optional = true }
 [dev-dependencies]
 
 [features]
-default = ["panic-failure-backtraces", "automate-function-loading-boilerplate"]
+default = ["wstp", "panic-failure-backtraces", "automate-function-loading-boilerplate"]
 nightly = []
 
+# Pulls the WSTP transport stack (wstp + wstp-sys + their C++ link). Required
+# for `#[export(wstp)]` and the `evaluate()`/`generate_loader!` Kernel-callback
+# helpers. Lightweight consumers (e.g. `wolfram-export-wxf` which only needs
+# MArgument ByteArray transfer) can disable this.
+wstp = ["dep:wstp"]
 panic-failure-backtraces = ["backtrace"]
-automate-function-loading-boilerplate = ["inventory", "process_path", "wolfram-library-link-macros/automate-function-loading-boilerplate"]
+automate-function-loading-boilerplate = [
+    "inventory",
+    "process_path",
+    "wolfram-export-macros/automate-function-loading-boilerplate",
+    "wolfram-export-core/automate-function-loading-boilerplate",
+]
 
 
 #=======================================

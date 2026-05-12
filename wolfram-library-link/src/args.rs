@@ -13,9 +13,10 @@ use crate::{
     expr::{Expr, Symbol},
     rtl,
     sys::{self, mint, mreal, MArgument},
-    wstp::Link,
     DataStore, Image, NumericArray,
 };
+#[cfg(feature = "wstp")]
+use crate::wstp::Link;
 
 /// Trait implemented for types that can be passed via an [`MArgument`].
 pub trait FromArg<'a> {
@@ -106,6 +107,7 @@ pub trait NativeFunction<'a> {
 /// * `fn(_: &mut Link)`
 /// * `fn(_: Vec<Expr>) -> Expr`
 /// * `fn(_: Vec<Expr>)`
+#[cfg(feature = "wstp")]
 pub trait WstpFunction {
     /// Call the function using the [`Link`] object passed by the Kernel.
     unsafe fn call(&self, link: &mut Link);
@@ -834,6 +836,12 @@ impl_NativeFunction!(A1, A2, A3, A4, A5, A6, A7, A8, A9, A10, A11, A12);
 // impl WstpFunction
 //======================================
 
+// Everything from this point on is WSTP-specific: trait impls + helper fns
+// that read/write Expr values through a WSTP `Link`.
+#[cfg(feature = "wstp")]
+mod wstp_impls {
+    use super::*;
+
 /// Implement [`WstpFunction`] for functions that use a [`Link`] for their arguments and
 /// return value.
 ///
@@ -967,3 +975,5 @@ fn get_args_list_impl(link: &mut Link) -> Result<Vec<Expr>, wstp::Error> {
 
     Ok(elements)
 }
+
+} // end of #[cfg(feature = "wstp")] mod wstp_impls
