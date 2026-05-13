@@ -1,4 +1,4 @@
-use wolfram_export_wstp::export;
+use wolfram_export_wstp::{export, wstp::Link};
 use wolfram_expr::{Expr, ExprKind, Symbol};
 
 #[export]
@@ -9,21 +9,20 @@ fn add(args: Vec<Expr>) -> Expr {
 }
 
 #[export]
-fn dot(args: Vec<Expr>) -> Expr {
-    let a = expr_to_f64_vec(&args[0]);
-    let b = expr_to_f64_vec(&args[1]);
-    Expr::real(wolfram_examples::dot(&a, &b))
+fn dot(link: &mut Link) {
+    let _n = link.test_head("List").unwrap();
+    let a = get_f64_numeric_array(link);
+    let b = get_f64_numeric_array(link);
+    link.put_f64(wolfram_examples::dot(&a, &b)).unwrap();
 }
 
 #[export]
-fn scale_array(args: Vec<Expr>) -> Expr {
-    let arr = expr_to_f64_vec(&args[0]);
-    let factor = as_f64(&args[1]);
+fn scale_array(link: &mut Link) {
+    let _n = link.test_head("List").unwrap();
+    let arr = get_f64_numeric_array(link);
+    let factor = link.get_f64().unwrap();
     let result = wolfram_examples::scale_array(&arr, factor);
-    Expr::normal(
-        Symbol::new("System`List"),
-        result.into_iter().map(Expr::real).collect(),
-    )
+    link.put_f64_array(&result, &[result.len()]).unwrap();
 }
 
 #[export]
@@ -39,23 +38,50 @@ fn as_f64(e: &Expr) -> f64 {
     }
 }
 
-fn expr_to_f64_vec(e: &Expr) -> Vec<f64> {
-    match e.kind() {
-        ExprKind::NumericArray(na) => na
-            .try_as_slice::<f64>()
-            .expect("expected Real64 NumericArray")
-            .to_vec(),
-        ExprKind::Normal(n) => {
-            let is_numeric_array = n
-                .head()
-                .try_as_symbol()
-                .map(|s| s.symbol_name().as_str() == "NumericArray")
-                .unwrap_or(false);
-            if is_numeric_array {
-                return expr_to_f64_vec(&n.elements()[0]);
+// Probe: for a single NumericArray arg, consume outer head then try get_f64_array on inner List.
+#[export]
+fn probe(link: &mut Link) {
+    let _n = link.test_head("List").unwrap();
+
+    // Peek at what's coming
+    let tok = link.get_type().unwrap();
+    eprintln!("outer token_type = {tok:?}");
+
+    // Consume the NumericArray head (2 args: the List and the type string)
+    match link.test_head("NumericArray") {
+        Ok(argc) => {
+            eprintln!("  it's NumericArray with {argc} args — trying get_f64_array on inner List");
+            let arr_result = link.get_f64_array()
+                .map(|a| (a.data().to_vec(), a.dimensions().to_vec()));
+            match arr_result {
+                Ok((data, dims)) => {
+                    eprintln!("  get_f64_array on inner List OK: len={}, dims={dims:?}, first={:?}",
+                        data.len(), data.first());
+                    // consume remaining args (type string "Real64", etc.)
+                    for _ in 1..argc {
+                        link.get_expr_with_resolver(
+                            &mut |name| Symbol::try_new(&format!("System`{name}"))
+                        ).unwrap();
+                    }
+                }
+                Err(e) => {
+                    eprintln!("  get_f64_array on inner List FAIL: {e}");
+                }
             }
-            n.elements().iter().map(|elem| as_f64(elem)).collect()
         }
-        _ => panic!("expected NumericArray or List, got {:?}", e),
+        Err(e) => {
+            eprintln!("  not a NumericArray: {e}");
+        }
     }
+
+    link.put_symbol("System`Null").unwrap();
+}
+
+// Reads NumericArray[List[...], "Real64"] off the link using binary transfer.
+fn get_f64_numeric_array(link: &mut Link) -> Vec<f64> {
+    let _argc = link.test_head("NumericArray").expect("expected NumericArray");
+    let data = link.get_f64_array().expect("expected Real64 array data").data().to_vec();
+    // consume the type string "Real64"
+    link.get_string_ref().expect("expected type string");
+    data
 }
