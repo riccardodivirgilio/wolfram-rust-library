@@ -4,12 +4,17 @@ use std::os::raw::c_int;
 use wstp::{self, Link};
 
 use crate::{
-    catch_panic::{call_and_catch_panic, CaughtPanic},
-    sys::{self, MArgument, LIBRARY_NO_ERROR},
+    catch_panic::call_and_catch_panic,
+    expr::Expr,
+    sys::{self, MArgument},
     NativeFunction,
 };
 #[cfg(feature = "wstp")]
-use crate::WstpFunction;
+use crate::{
+    catch_panic::CaughtPanic,
+    sys::LIBRARY_NO_ERROR,
+    WstpFunction,
+};
 
 /// Error codes returned by macro-generated wrapper code.
 ///
@@ -34,6 +39,22 @@ mod error_code {
     //
     // TODO: Wherever this code is set, also set a $LastError-like variable.
     pub const FAILED_WITH_PANIC: c_int = OFFSET + 2;
+}
+
+//==================
+// Shared panic helper
+//==================
+
+/// Run `func`, catch any panic, and convert it to a `Failure[...]` [`Expr`].
+///
+/// Returns `Ok(T)` on success or `Err(failure_expr)` on panic. Each backend
+/// decides what to do with the failure: WXF serializes it, WSTP writes it to
+/// the link, native re-panics.
+pub fn call_and_catch_as_expr<T, F>(func: F) -> Result<T, Expr>
+where
+    F: FnOnce() -> T + std::panic::UnwindSafe,
+{
+    call_and_catch_panic(func).map_err(|caught| caught.to_pretty_expr())
 }
 
 //==================

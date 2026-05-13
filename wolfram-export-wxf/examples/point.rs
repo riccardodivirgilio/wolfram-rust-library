@@ -28,12 +28,11 @@ fn create_point(_: ()) -> Point {
     Point { x: 3.0, y: 4.0 }
 }
 
-// Round-trip: take a Point, scale it. Demonstrates a typed-args function
-// where both directions go through WXF.
+// Round-trip: take a Point and a scale factor, scale it.
 #[export]
-fn scale_point(p: Point) -> Point {
+fn scale_point(p: Point, scale: f64) -> Point {
     Point {
-        x: p.x * 2.0,
-        y: p.y * 2.0,
+        x: p.x * scale,
+        y: p.y * scale,
     }
 }

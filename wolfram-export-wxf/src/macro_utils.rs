@@ -16,12 +16,12 @@ use wolfram_library_link::NumericArray;
 use wolfram_serializer::{deserialize, serialize, Format, FromWolfram, ToWolfram};
 
 /// Compute the (arg types, return type) signature for a `#[export(wxf)]`
-/// function. Used by the inventory entry's `signature` closure. For now
-/// the entries are placeholders (`Expr::string("Expr")`); a follow-up
-/// `wolfram_type()` trait method on `FromWolfram` / `ToWolfram` will yield
-/// concrete type names.
-pub fn wxf_signature() -> Result<(Vec<Expr>, Expr), String> {
-    Ok((vec![Expr::string("Expr")], Expr::string("Expr")))
+/// function with `n` parameters. Each arg maps to a `ByteArray` on the WL side.
+pub fn wxf_signature(n: usize) -> Result<(Vec<Expr>, Expr), String> {
+    Ok((
+        vec![Expr::symbol(wolfram_expr::Symbol::new("System`ByteArray")); n],
+        Expr::symbol(wolfram_expr::Symbol::new("System`ByteArray")),
+    ))
 }
 
 /// Deserialize WXF bytes from `input` into a typed value of type `A`.
@@ -38,6 +38,22 @@ pub fn encode<R: ToWolfram>(value: &R) -> NumericArray<u8> {
     let bytes: Vec<u8> = serialize(value, Format::Wxf)
         .unwrap_or_else(|e| panic!("WXF serialize failed: {}", e));
     NumericArray::<u8>::from_slice(&bytes)
+}
+
+/// Run `func` (the body of a WXF bridge), catch any panic, and return either
+/// the successful `NumericArray<u8>` result or a WXF-serialized
+/// `Failure["RustPanic", …]` expression.  The caller always gets a valid
+/// `NumericArray<u8>` back — on panic the kernel receives the failure
+/// expression rather than an opaque error code.
+pub fn call_and_encode_panic<F>(func: F) -> NumericArray<u8>
+where
+    F: FnOnce() -> NumericArray<u8>,
+{
+    use std::panic::AssertUnwindSafe;
+    match wolfram_library_link::macro_utils::call_and_catch_as_expr(AssertUnwindSafe(func)) {
+        Ok(result) => result,
+        Err(failure_expr) => encode(&failure_expr),
+    }
 }
 
 /// Marker trait used by the proc-macro to constrain the user function's

@@ -288,15 +288,17 @@ pub use wolfram_expr::{BigInteger, BigReal};
 
 
 
-use std::sync::Mutex;
-
-use once_cell::sync::Lazy;
-
 use wolfram_library_link_sys::mint;
 #[cfg(feature = "wstp")]
-use wstp::Link;
+use {
+    std::sync::Mutex,
+    once_cell::sync::Lazy,
+    wstp::Link,
+};
 
+#[cfg(feature = "wstp")]
 pub(crate) use self::library_data::assert_main_thread;
+#[cfg(feature = "wstp")]
 use crate::expr::{Expr, ExprKind, Symbol};
 
 //--------------------------------------
@@ -685,7 +687,6 @@ pub use wolfram_export_macros::init;
 // syntax as today.
 pub use wolfram_export_macros::export;
 
-const BACKTRACE_ENV_VAR: &str = "LIBRARY_LINK_RUST_BACKTRACE";
 
 //======================================
 // Callbacks to the Wolfram Kernel

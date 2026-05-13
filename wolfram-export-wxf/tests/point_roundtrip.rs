@@ -16,6 +16,7 @@
 //! (which requires Wolfram-allocated MNumericArrays that we can't construct
 //! from a plain Rust test).
 
+use wolfram_expr::Expr;
 use wolfram_serializer::{deserialize, serialize, Format, FromWolfram, ToWolfram};
 
 // SAME shape as wolfram-export-wxf/examples/point.rs — the derive emits an
@@ -52,10 +53,10 @@ fn create_point(_: ()) -> Point {
 }
 
 /// `scale_point` from examples/point.rs.
-fn scale_point(p: Point) -> Point {
+fn scale_point(p: Point, scale: f64) -> Point {
     Point {
-        x: p.x * 2.0,
-        y: p.y * 2.0,
+        x: p.x * scale,
+        y: p.y * scale,
     }
 }
 
@@ -122,11 +123,44 @@ fn create_point_wxf_roundtrip_via_user_fn() {
 
 #[test]
 fn scale_point_wxf_roundtrip_via_user_fn() {
-    // Input: kernel WXF for Point{x:1, y:2}.
     let arg: Point = deserialize(KERNEL_POINT_1_2, Format::Wxf).expect("decode Point 1,2");
-    // Apply the user function.
-    let result: Point = scale_point(arg);
-    // Re-serialize. Must match kernel WXF for Point{x:2, y:4}.
+    let result: Point = scale_point(arg, 2.0);
     let out_bytes = serialize(&result, Format::Wxf).expect("encode Point 2,4");
     assert_eq!(out_bytes.as_slice(), KERNEL_POINT_2_4);
+}
+
+//==============================================================================
+// Panic → Failure round-trip.
+//==============================================================================
+
+#[test]
+fn bad_input_yields_failure_expr() {
+    use std::panic::AssertUnwindSafe;
+    use wolfram_library_link::macro_utils::call_and_catch_as_expr;
+
+    // Simulate a bad-input panic (e.g. wrong WXF type passed to scale_point).
+    // call_and_catch_as_expr must return Err(Failure[...]) rather than propagating.
+    let result: Result<(), Expr> = call_and_catch_as_expr(AssertUnwindSafe(|| {
+        panic!("WXF deserialize failed: expected Association, got String");
+    }));
+
+    let failure_expr = result.expect_err("expected a caught panic");
+
+    // The result must be Failure["RustPanic", ...].
+    let n = failure_expr.try_as_normal().expect("Failure should be a Normal expr");
+    assert_eq!(
+        n.head().try_as_symbol().unwrap().as_str(),
+        "System`Failure",
+        "expected Failure head, got: {}",
+        failure_expr
+    );
+    assert_eq!(n.elements()[0].try_as_str(), Some("RustPanic"));
+
+    // Also verify the failure expr round-trips through WXF (what the real bridge does).
+    let bytes = serialize(&failure_expr, Format::Wxf).expect("serialize Failure");
+    let decoded: Expr = deserialize(&bytes, Format::Wxf).expect("deserialize Failure");
+    assert_eq!(
+        decoded.try_as_normal().unwrap().head().try_as_symbol().unwrap().as_str(),
+        "System`Failure"
+    );
 }

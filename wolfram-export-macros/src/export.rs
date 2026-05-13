@@ -228,33 +228,53 @@ fn export_wstp_function(
 fn export_wxf_function(
     name: &Ident,
     exported_name: &Ident,
-    _parameter_tys: syn::punctuated::Punctuated<syn::FnArg, syn::token::Comma>,
+    params: syn::punctuated::Punctuated<syn::FnArg, syn::token::Comma>,
     hidden: bool,
     prefix: &Prefix,
 ) -> TokenStream2 {
     let p = &prefix.crate_path;
-    // The user's function has typed args (any FromWolfram type) and a typed
-    // return (any ToWolfram type). We wrap it with a `__wxf_bridge` that
-    // looks like a regular native function: `fn(NumericArray<u8>) ->
-    // NumericArray<u8>`. The bridge body uses `decode<A>()` / `encode<R>()`
-    // to round-trip via WXF; the actual argument and return types are
-    // inferred from the user function's signature.
+    let n = params.len();
+
+    // One ident per parameter: __input0, __input1, ...
+    let input_idents: Vec<_> = (0..n)
+        .map(|i| quote::format_ident!("__input{}", i))
+        .collect();
+    let arg_idents: Vec<_> = (0..n)
+        .map(|i| quote::format_ident!("__arg{}", i))
+        .collect();
+
+    // Bridge params: `__input0: &NumericArray<u8>, __input1: &NumericArray<u8>, ...`
+    let bridge_params: Vec<_> = input_idents
+        .iter()
+        .map(|id| quote! { #id: &#p::NumericArray<u8> })
+        .collect();
+
+    // Decode stmts: `let __arg0 = decode(__input0); ...`
+    let decode_stmts: Vec<_> = input_idents
+        .iter()
+        .zip(arg_idents.iter())
+        .map(|(inp, arg)| quote! { let #arg = #p::macro_utils::decode(#inp); })
+        .collect();
+
+    // `fn(_, _, ...) -> _` placeholders for the NativeFunction coercion.
+    let underscore_params: Vec<_> = (0..n).map(|_| quote! { _ }).collect();
+
     let mut tokens = quote! {
         mod #name {
             use super::*;
 
-            // The bridge takes input by reference (`&NumericArray<u8>`)
-            // because WL's `ByteArray` argument is passed in `Constant`
-            // memory mode — the kernel retains ownership of the buffer and
-            // the wrapper must not increment the share count. Using an
-            // owned `NumericArray<u8>` would map to `Shared` mode and
-            // mismatch the LibraryFunctionLoad signature.
+            // Each ByteArray arg is passed in `Constant` memory mode — the
+            // kernel retains ownership, so we take references here.
+            // Panics (including deserialization failures) are caught and
+            // returned as a WXF-encoded Failure[] expression.
             fn __wxf_bridge(
-                __input: &#p::NumericArray<u8>,
+                #(#bridge_params),*
             ) -> #p::NumericArray<u8> {
-                let __arg = #p::macro_utils::decode(__input);
-                let __result = super::#name(__arg);
-                #p::macro_utils::encode(&__result)
+                #p::macro_utils::call_and_encode_panic(|| {
+                    #(#decode_stmts)*
+                    let __result = super::#name(#(#arg_idents),*);
+                    #p::macro_utils::encode(&__result)
+                })
             }
 
             #[no_mangle]
@@ -264,11 +284,7 @@ fn export_wxf_function(
                 args: *mut #p::sys::MArgument,
                 res: #p::sys::MArgument,
             ) -> std::os::raw::c_int {
-                // Match the lifetime-elision pattern the existing native
-                // macro uses (`let func: fn(_) -> _ = super::name;`).
-                // Rust resolves NativeFunction<'a> from `FromArg<'a>` via
-                // fn-item coercion at the call site.
-                let func: fn(_) -> _ = __wxf_bridge;
+                let func: fn(#(#underscore_params),*) -> _ = __wxf_bridge;
                 #p::macro_utils::call_wxf_wolfram_library_function(
                     lib,
                     args,
@@ -281,11 +297,12 @@ fn export_wxf_function(
     };
 
     if !hidden && cfg!(feature = "automate-function-loading-boilerplate") {
+        let n_lit = n;
         tokens.extend(quote! {
             #p::inventory::submit! {
                 #p::macro_utils::LibraryLinkFunction::Wxf {
                     name: stringify!(#exported_name),
-                    signature: #p::macro_utils::wxf_signature,
+                    signature: || #p::macro_utils::wxf_signature(#n_lit),
                 }
             }
         });
