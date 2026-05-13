@@ -27,6 +27,7 @@ automate-function-loading-boilerplate = [
 ]
 
 [[example]]
-name = "points_wxf"
+name = "types_wxf"
+path = "examples/types.rs"
 crate-type = ["cdylib"]
 required-features = ["automate-function-loading-boilerplate"]

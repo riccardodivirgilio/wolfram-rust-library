@@ -25,6 +25,7 @@ automate-function-loading-boilerplate = [
 ]
 
 [[example]]
-name = "points_native"
+name = "types_native"
+path = "examples/types.rs"
 crate-type = ["cdylib"]
 required-features = ["automate-function-loading-boilerplate"]
