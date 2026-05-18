@@ -201,10 +201,15 @@ fn render_wl(dylib_name: &str, entries: &[FunctionEntry]) -> String {
                     "ConstantArray[{{LibraryDataType[NumericArray, \"UnsignedInteger8\"], \"Constant\"}}, {}]",
                     e.nargs
                 );
+                let load = format!(
+                    "LibraryFunctionLoad[$lib, \"{}\", {}, \
+                     {{LibraryDataType[NumericArray, \"UnsignedInteger8\"], Automatic}}]",
+                    e.name, arg_spec
+                );
                 out.push_str(&format!(
-                    "    \"{}\" -> LibraryFunctionLoad[$lib, \"{}\", {}, \
-                     {{LibraryDataType[NumericArray, \"UnsignedInteger8\"], Automatic}}]{}\n",
-                    e.name, e.name, arg_spec, sep
+                    "    \"{}\" -> Composition[BinaryDeserialize, ByteArray, \
+                     Apply[{}, Map[BinarySerialize], List]]{}\n",
+                    e.name, load, sep
                 ));
             },
             other => {
