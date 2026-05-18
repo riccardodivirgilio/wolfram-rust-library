@@ -1,15 +1,14 @@
-exDir[f_] := FileNameJoin[{DirectoryName[$InputFileName], "..", "target", "debug", "examples", f}];
+exDir[f_] := FileNameJoin[{DirectoryName[$InputFileName], "..", "target", "release", "examples", f}];
 libNative = exDir["libtypes_native.dylib"];
 libWstp = exDir["libtypes_wstp.dylib"];
 libWxf  = exDir["libtypes_wxf.dylib"];
 
-toWxfArg[x_]       := NumericArray @ BinarySerialize[x];
 fromWxfResult[na_] := BinaryDeserialize[ByteArray @ na];
 wxfLoad[lib_, fn_, nArgs_] := Module[{raw},
   raw = LibraryFunctionLoad[lib, fn,
-    ConstantArray[{LibraryDataType[NumericArray, "UnsignedInteger8"], "Constant"}, nArgs],
+    {{LibraryDataType[NumericArray, "UnsignedInteger8"], "Constant"}},
     {LibraryDataType[NumericArray, "UnsignedInteger8"], Automatic}];
-  Function[args, fromWxfResult[raw @@ (toWxfArg /@ args)]]];
+  Function[args, fromWxfResult[raw[NumericArray @ BinarySerialize[List @@ args]]]]];
 
 nativeAdd   = LibraryFunctionLoad[libNative, "add", {Real, Real}, Real];
 nativeDot   = LibraryFunctionLoad[libNative, "dot",
