@@ -34,9 +34,13 @@ enum WolframCmd {
 
 #[derive(Parser)]
 struct BuildArgs {
-    /// Output directory for generated .wl files (default: next to the dylib)
+    /// Destination folder for the package (default: <dylib_dir>/<stem>/)
     #[arg(long)]
     out: Option<PathBuf>,
+
+    /// Empty the destination folder before writing
+    #[arg(long)]
+    cleanup: bool,
 
     /// Extra arguments forwarded verbatim to `cargo build`
     #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
@@ -118,7 +122,7 @@ fn cmd_build(args: BuildArgs) -> Result<()> {
     }
 
     for dylib in &dylibs {
-        generate_loader(dylib, args.out.as_deref())?;
+        generate_loader(dylib, args.out.as_deref(), args.cleanup)?;
     }
 
     Ok(())
@@ -126,7 +130,7 @@ fn cmd_build(args: BuildArgs) -> Result<()> {
 
 // ── loader generation ────────────────────────────────────────────────────────
 
-fn generate_loader(dylib: &Path, out_dir: Option<&Path>) -> Result<()> {
+fn generate_loader(dylib: &Path, out_dir: Option<&Path>, cleanup: bool) -> Result<()> {
     // Compute SHA256 of the dylib bytes.
     let dylib_bytes = std::fs::read(dylib)
         .with_context(|| format!("failed to read {}", dylib.display()))?;
@@ -135,16 +139,15 @@ fn generate_loader(dylib: &Path, out_dir: Option<&Path>) -> Result<()> {
     let ext = dylib.extension().and_then(|e| e.to_str()).unwrap_or("dylib");
     let hashed_name = format!("{}.{}", hash, ext);
 
-    // Output folder: <out_dir|dylib_dir>/<stem>/
-    let stem = dylib.file_stem().unwrap();
-    let folder = if let Some(dir) = out_dir {
-        dir.join(stem)
+    // --out is the exact destination folder; default is <dylib_dir>/<stem>/.
+    let folder: PathBuf = if let Some(dir) = out_dir {
+        dir.to_owned()
     } else {
+        let stem = dylib.file_stem().unwrap();
         dylib.parent().unwrap_or(Path::new(".")).join(stem)
     };
 
-    // Clear and recreate the folder.
-    if folder.exists() {
+    if cleanup && folder.exists() {
         std::fs::remove_dir_all(&folder)
             .with_context(|| format!("failed to clear {}", folder.display()))?;
     }
