@@ -248,18 +248,8 @@ fn expand_field_extract(ty: &syn::Type, err_path: &str, span: Span) -> TokenStre
             __slice.to_vec()
         }},
         FieldKind::VecOfOther { elem_ty } => quote_spanned! { span => {
-            // Wire shape: Function[Symbol("System`List"), …elements…].
             let __n = __c.read_function_header()?;
-            let __head = __c.read_symbol()?;
-            if __head.as_str() != "System`List" {
-                return ::core::result::Result::Err(
-                    ::wolfram_serializer::from_wolfram::err_at(
-                        #err_path,
-                        "Function[List, …]",
-                        format!("Function[Symbol({:?}), …]", __head.as_str()),
-                    ),
-                );
-            }
+            __c.skip()?; // discard head — any shape accepted
             let mut __out: ::std::vec::Vec<#elem_ty> = ::std::vec::Vec::with_capacity(__n as usize);
             for _ in 0..__n {
                 __out.push(<#elem_ty as ::wolfram_serializer::FromWolfram>::from_cursor(__c)?);
@@ -378,7 +368,6 @@ fn expand_field_extract(ty: &syn::Type, err_path: &str, span: Span) -> TokenStre
             }
         },
         FieldKind::TupleHetero { tup } => {
-            // Heterogeneous tuple — expect Function[List, …] with arity = tup.elems.len().
             let arity = tup.elems.len();
             let elem_extracts = tup.elems.iter().enumerate().map(|(i, t)| {
                 let inner_path = format!("{}.{}", err_path, i);
@@ -387,22 +376,13 @@ fn expand_field_extract(ty: &syn::Type, err_path: &str, span: Span) -> TokenStre
             });
             quote_spanned! { span => {
                 let __n = __c.read_function_header()?;
-                let __head = __c.read_symbol()?;
-                if __head.as_str() != "System`List" {
-                    return ::core::result::Result::Err(
-                        ::wolfram_serializer::from_wolfram::err_at(
-                            #err_path,
-                            "Function[List, …]",
-                            format!("Function[Symbol({:?}), …]", __head.as_str()),
-                        ),
-                    );
-                }
+                __c.skip()?; // discard head — any shape accepted
                 if __n != #arity as u64 {
                     return ::core::result::Result::Err(
                         ::wolfram_serializer::from_wolfram::err_at(
                             #err_path,
-                            "Function[List, …] with matching arity",
-                            format!("got {} elements", __n),
+                            concat!("Function with ", stringify!(#arity), " arguments"),
+                            format!("got {} arguments", __n),
                         ),
                     );
                 }
@@ -410,27 +390,16 @@ fn expand_field_extract(ty: &syn::Type, err_path: &str, span: Span) -> TokenStre
             }}
         },
         FieldKind::ArrayHetero { arr, len } => {
-            // Heterogeneous fixed-size array — expect Function[List, …]
-            // with `len` elements.
             let elem_ty = &arr.elem;
             quote_spanned! { span => {
                 let __n = __c.read_function_header()?;
-                let __head = __c.read_symbol()?;
-                if __head.as_str() != "System`List" {
-                    return ::core::result::Result::Err(
-                        ::wolfram_serializer::from_wolfram::err_at(
-                            #err_path,
-                            "Function[List, …]",
-                            format!("Function[Symbol({:?}), …]", __head.as_str()),
-                        ),
-                    );
-                }
+                __c.skip()?; // discard head — any shape accepted
                 if __n != #len as u64 {
                     return ::core::result::Result::Err(
                         ::wolfram_serializer::from_wolfram::err_at(
                             #err_path,
-                            "Function[List, …] with matching length",
-                            format!("got {} elements", __n),
+                            concat!("Function with ", stringify!(#len), " arguments"),
+                            format!("got {} arguments", __n),
                         ),
                     );
                 }
@@ -553,19 +522,8 @@ fn expand_enum(
                                 ),
                             );
                         }
-                        // "Data" value is a List[args...] — Function header
-                        // with head "System`List".
                         let __list_arity = __c.read_function_header()?;
-                        let __list_head = __c.read_symbol()?;
-                        if __list_head.as_str() != "System`List" {
-                            return ::core::result::Result::Err(
-                                ::wolfram_serializer::from_wolfram::err_at(
-                                    #v_path,
-                                    "Function[List, ...] for tuple variant Data",
-                                    format!("Function[Symbol({:?}), ...]", __list_head.as_str()),
-                                ),
-                            );
-                        }
+                        __c.skip()?; // discard head — any shape accepted
                         if __list_arity != #arity as u64 {
                             return ::core::result::Result::Err(
                                 ::wolfram_serializer::from_wolfram::err_at(
