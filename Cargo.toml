@@ -15,6 +15,7 @@ members = [
     "wolfram-export-wstp",
     "wolfram-export-wxf",
     "wolfram-examples",
+    "wolfram-cli",
     "xtask",
 ]
 

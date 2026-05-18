@@ -92,6 +92,63 @@ pub extern "C" fn __wolfram_manifest__(out_len: *mut usize) -> *const u8 {
     ptr
 }
 
+/// C-ABI symbol returning a null-terminated JSON description of every exported
+/// function. Consumed by `cargo wolfram build` via `libloading` — no WL kernel needed.
+///
+/// JSON shape: `[{"name":"add","kind":"Native","params":["Real","Real"],"ret":"Real"}, ...]`
+/// where `kind` is `"Native"`, `"Wstp"`, or `"Wxf"` and `"nargs"` is present for `"Wxf"`.
+/// The returned pointer is a `'static` C string (leaked once, never freed).
+#[cfg(feature = "automate-function-loading-boilerplate")]
+#[no_mangle]
+pub extern "C" fn __wolfram_manifest_json__() -> *const std::os::raw::c_char {
+    fn json_str(s: &str) -> String {
+        let escaped = s.replace('\\', "\\\\").replace('"', "\\\"");
+        format!("\"{}\"", escaped)
+    }
+
+    let mut entries = String::from("[");
+    let mut first = true;
+
+    for entry in inventory::iter::<ExportEntry> {
+        if !first {
+            entries.push(',');
+        }
+        first = false;
+
+        match entry {
+            ExportEntry::Native { name, signature } => {
+                let (params, ret) = signature().unwrap_or_else(|_| (vec![], Expr::string("")));
+                let params_json: Vec<String> =
+                    params.iter().map(|e| json_str(&e.to_string())).collect();
+                entries.push_str(&format!(
+                    r#"{{"name":{},"kind":"Native","params":[{}],"ret":{}}}"#,
+                    json_str(name),
+                    params_json.join(","),
+                    json_str(&ret.to_string())
+                ));
+            },
+            ExportEntry::Wstp { name } => {
+                entries.push_str(&format!(
+                    r#"{{"name":{},"kind":"Wstp"}}"#,
+                    json_str(name)
+                ));
+            },
+            ExportEntry::Wxf { name, signature } => {
+                let nargs = signature().map(|(p, _)| p.len()).unwrap_or(0);
+                entries.push_str(&format!(
+                    r#"{{"name":{},"kind":"Wxf","nargs":{nargs}}}"#,
+                    json_str(name)
+                ));
+            },
+        }
+    }
+
+    entries.push(']');
+
+    let cstring = std::ffi::CString::new(entries).expect("manifest JSON contains null byte");
+    std::ffi::CString::into_raw(cstring)
+}
+
 /// Returns an [`Association`][Association] containing the names and `LibraryFunctionLoad`
 /// calls for every `#[export(..)]`-marked function in this library.
 ///
