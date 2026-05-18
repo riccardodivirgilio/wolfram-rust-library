@@ -247,11 +247,22 @@ fn export_wxf_function(
         .map(|id| quote! { #id: &#p::NumericArray<u8> })
         .collect();
 
-    // Decode stmts: `let __arg0 = decode(__input0); ...`
+    // Decode stmts: each `decode` returns `Result<_, String>`. On the first
+    // Err, encode a Failure["WxfDeserialize", ...] and return from the bridge
+    // body without invoking the user function.
     let decode_stmts: Vec<_> = input_idents
         .iter()
         .zip(arg_idents.iter())
-        .map(|(inp, arg)| quote! { let #arg = #p::macro_utils::decode(#inp); })
+        .map(|(inp, arg)| quote! {
+            let #arg = match #p::macro_utils::decode(#inp) {
+                ::core::result::Result::Ok(v) => v,
+                ::core::result::Result::Err(__msg) => {
+                    return #p::macro_utils::encode(
+                        &#p::macro_utils::deserialize_failure_expr(&__msg),
+                    );
+                }
+            };
+        })
         .collect();
 
     // `fn(_, _, ...) -> _` placeholders for the NativeFunction coercion.

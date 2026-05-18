@@ -26,11 +26,26 @@ pub fn wxf_signature(n: usize) -> Result<(Vec<Expr>, Expr), String> {
 
 /// Deserialize WXF bytes from `input` into a typed value of type `A`.
 /// Helper for macro-emitted code so the call sites don't have to import
-/// `wolfram_serializer` directly.
-pub fn decode<A: FromWolfram>(input: &NumericArray<u8>) -> A {
+/// `wolfram_serializer` directly. Returns the error message as a `String`
+/// for the bridge to surface back to WL as a `Failure["WxfDeserialize", …]`.
+pub fn decode<A: FromWolfram>(input: &NumericArray<u8>) -> Result<A, String> {
     let bytes: &[u8] = input.as_slice();
-    deserialize::<A>(bytes, Format::Wxf)
-        .unwrap_or_else(|e| panic!("WXF deserialize failed: {}", e))
+    deserialize::<A>(bytes, Format::Wxf).map_err(|e| e.to_string())
+}
+
+/// Build a `Failure["WxfDeserialize", <|"MessageTemplate" -> msg|>]` Expr that
+/// the bridge encodes back to WL when a typed-arg decode fails.
+pub fn deserialize_failure_expr(msg: &str) -> wolfram_expr::Expr {
+    use wolfram_expr::{Expr, Symbol};
+    let assoc_entry = Expr::normal(
+        Symbol::new("System`Rule"),
+        vec![Expr::string("MessageTemplate"), Expr::string(msg)],
+    );
+    let assoc = Expr::normal(Symbol::new("System`Association"), vec![assoc_entry]);
+    Expr::normal(
+        Symbol::new("System`Failure"),
+        vec![Expr::string("WxfDeserialize"), assoc],
+    )
 }
 
 /// Serialize `value` to WXF bytes and wrap them in a UInt8 NumericArray.

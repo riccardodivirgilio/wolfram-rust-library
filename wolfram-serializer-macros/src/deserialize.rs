@@ -216,37 +216,9 @@ fn expand_field_extract(ty: &syn::Type, err_path: &str, span: Span) -> TokenStre
         FieldKind::VecOfU8 => quote_spanned! { span =>
             __c.read_byte_array()?
         },
-        FieldKind::VecOfNumeric { elem_ty, dt } => quote_spanned! { span => {
-            let __na = __c.read_numeric_array()?;
-            if ::wolfram_expr::NumericArrayRead::data_type(&__na) != #dt {
-                return ::core::result::Result::Err(
-                    ::wolfram_serializer::from_wolfram::err_at(
-                        #err_path,
-                        "NumericArray with matching element type",
-                        format!("NumericArray<{}>",
-                                ::wolfram_expr::NumericArrayRead::data_type(&__na).name()),
-                    ),
-                );
-            }
-            if ::wolfram_expr::NumericArrayRead::dimensions(&__na).len() != 1 {
-                return ::core::result::Result::Err(
-                    ::wolfram_serializer::from_wolfram::err_at(
-                        #err_path,
-                        "1-D NumericArray",
-                        format!("NumericArray with rank {}",
-                                ::wolfram_expr::NumericArrayRead::dimensions(&__na).len()),
-                    ),
-                );
-            }
-            let __slice: &[#elem_ty] = __na.try_as_slice::<#elem_ty>().ok_or_else(|| {
-                ::wolfram_serializer::from_wolfram::err_at(
-                    #err_path,
-                    "NumericArray element-type slice",
-                    "element-type mismatch".into(),
-                )
-            })?;
-            __slice.to_vec()
-        }},
+        FieldKind::VecOfNumeric { elem_ty, dt: _ } => quote_spanned! { span =>
+            ::wolfram_serializer::numeric_in::read_vec::<#elem_ty>(__c, #err_path)?
+        },
         FieldKind::VecOfOther { elem_ty } => quote_spanned! { span => {
             let __n = __c.read_function_header()?;
             __c.skip()?; // discard head — any shape accepted
@@ -258,97 +230,32 @@ fn expand_field_extract(ty: &syn::Type, err_path: &str, span: Span) -> TokenStre
         }},
         FieldKind::NumericTensor {
             elem_ty,
-            dt,
+            dt: _,
             dims,
             tuple_paths,
             original_ty,
         } => {
-            let dim_lits: Vec<TokenStream> = dims.iter().map(|d| quote! { #d }).collect();
             let total_leaves: usize = dims.iter().product();
-            let rank = dims.len();
-            let dim_check = quote_spanned! { span =>
-                let __expected_dims: [usize; #rank] = [ #(#dim_lits),* ];
-                if ::wolfram_expr::NumericArrayRead::dimensions(&__na) != &__expected_dims[..] {
-                    return ::core::result::Result::Err(
-                        ::wolfram_serializer::from_wolfram::err_at(
-                            #err_path,
-                            "NumericArray with matching dimensions",
-                            format!("NumericArray with dims {:?}",
-                                    ::wolfram_expr::NumericArrayRead::dimensions(&__na)),
-                        ),
-                    );
-                }
-            };
             if let Some(_paths) = &tuple_paths {
-                // Tuple-rooted tensor — build the tuple by indexing the flat
-                // slice in row-major order (mirrors how serialize.rs walked
-                // dotted paths to flatten it for the wire).
+                // Tuple-rooted tensor — flatten the widened buffer back into a
+                // nested tuple via row-major indexing.
                 let tup_ctor = build_tuple_ctor_from_slice(original_ty, &mut 0);
                 quote_spanned! { span => {
-                    let __na = __c.read_numeric_array()?;
-                    if ::wolfram_expr::NumericArrayRead::data_type(&__na) != #dt {
-                        return ::core::result::Result::Err(
-                            ::wolfram_serializer::from_wolfram::err_at(
-                                #err_path,
-                                "NumericArray with matching element type",
-                                format!("NumericArray<{}>",
-                                        ::wolfram_expr::NumericArrayRead::data_type(&__na).name()),
-                            ),
-                        );
-                    }
-                    #dim_check
-                    let __slice: &[#elem_ty] = __na.try_as_slice::<#elem_ty>().ok_or_else(|| {
-                        ::wolfram_serializer::from_wolfram::err_at(
-                            #err_path,
-                            "NumericArray element-type slice",
-                            "element-type mismatch".into(),
-                        )
-                    })?;
-                    if __slice.len() != #total_leaves {
-                        return ::core::result::Result::Err(
-                            ::wolfram_serializer::from_wolfram::err_at(
-                                #err_path,
-                                "NumericArray with expected leaf count",
-                                format!("got {} leaves", __slice.len()),
-                            ),
-                        );
-                    }
+                    let __slice: ::std::vec::Vec<#elem_ty> =
+                        ::wolfram_serializer::numeric_in::read_fixed::<#elem_ty>(
+                            __c, #err_path, #total_leaves,
+                        )?;
                     #tup_ctor
                 }}
             } else {
-                // Array-rooted tensor — `[T; N]` and friends have defined
-                // contiguous layout, so byte-copy from the slice into a
-                // stack-allocated default-initialized output of the field
-                // type.
+                // Array-rooted tensor — `[T; N]` (and nests thereof) have
+                // contiguous T layout; byte-copy the widened buffer into a
+                // default-initialized output.
                 quote_spanned! { span => {
-                    let __na = __c.read_numeric_array()?;
-                    if ::wolfram_expr::NumericArrayRead::data_type(&__na) != #dt {
-                        return ::core::result::Result::Err(
-                            ::wolfram_serializer::from_wolfram::err_at(
-                                #err_path,
-                                "NumericArray with matching element type",
-                                format!("NumericArray<{}>",
-                                        ::wolfram_expr::NumericArrayRead::data_type(&__na).name()),
-                            ),
-                        );
-                    }
-                    #dim_check
-                    let __slice: &[#elem_ty] = __na.try_as_slice::<#elem_ty>().ok_or_else(|| {
-                        ::wolfram_serializer::from_wolfram::err_at(
-                            #err_path,
-                            "NumericArray element-type slice",
-                            "element-type mismatch".into(),
-                        )
-                    })?;
-                    if __slice.len() != #total_leaves {
-                        return ::core::result::Result::Err(
-                            ::wolfram_serializer::from_wolfram::err_at(
-                                #err_path,
-                                "NumericArray with expected leaf count",
-                                format!("got {} leaves", __slice.len()),
-                            ),
-                        );
-                    }
+                    let __slice: ::std::vec::Vec<#elem_ty> =
+                        ::wolfram_serializer::numeric_in::read_fixed::<#elem_ty>(
+                            __c, #err_path, #total_leaves,
+                        )?;
                     let mut __out: #original_ty = ::core::default::Default::default();
                     let __out_bytes = unsafe {
                         ::core::slice::from_raw_parts_mut(
@@ -359,7 +266,7 @@ fn expand_field_extract(ty: &syn::Type, err_path: &str, span: Span) -> TokenStre
                     let __src_bytes = unsafe {
                         ::core::slice::from_raw_parts(
                             __slice.as_ptr() as *const u8,
-                            ::core::mem::size_of_val(__slice),
+                            ::core::mem::size_of_val::<[#elem_ty]>(&__slice),
                         )
                     };
                     __out_bytes.copy_from_slice(__src_bytes);

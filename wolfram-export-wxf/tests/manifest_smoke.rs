@@ -21,7 +21,7 @@ use wolfram_expr::Expr;
 use wolfram_serializer::{deserialize, Format};
 
 /// Path to the built example dylib. Tests run after `cargo build` populates
-/// `target/<profile>/examples/libpoint.dylib`.
+/// `target/<profile>/examples/libtypes_wxf.dylib`.
 fn example_dylib_path() -> std::path::PathBuf {
     let mut p = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     p.push("..");
@@ -30,11 +30,11 @@ fn example_dylib_path() -> std::path::PathBuf {
     p.push("examples");
     // Platform-specific dylib name.
     #[cfg(target_os = "macos")]
-    p.push("libpoint.dylib");
+    p.push("libtypes_wxf.dylib");
     #[cfg(target_os = "linux")]
-    p.push("libpoint.so");
+    p.push("libtypes_wxf.so");
     #[cfg(target_os = "windows")]
-    p.push("point.dll");
+    p.push("types_wxf.dll");
     p
 }
 
@@ -46,7 +46,7 @@ fn ensure_example_built() {
         .args([
             "build",
             "--example",
-            "point",
+            "types_wxf",
             "-p",
             "wolfram-export-wxf",
             "--features",
@@ -109,16 +109,14 @@ fn wolfram_manifest_symbol_returns_valid_wxf() {
 
     // Each entry is `Rule[name, LibraryFunctionLoad[...]]`.
     let entries = assoc.elements();
-    assert_eq!(
-        entries.len(),
-        2,
-        "manifest should have exactly 2 entries (create_point + scale_point), got {}: {}",
-        entries.len(),
-        assoc_expr,
+    assert!(
+        !entries.is_empty(),
+        "manifest should contain at least one entry: {}",
+        assoc_expr
     );
 
     // Collect entry names by walking the Rule heads.
-    let mut names: Vec<String> = entries
+    let names: Vec<String> = entries
         .iter()
         .map(|rule| {
             let n = rule.try_as_normal().expect("entry should be Rule[...]");
@@ -129,33 +127,25 @@ fn wolfram_manifest_symbol_returns_valid_wxf() {
                 .to_string()
         })
         .collect();
-    names.sort();
 
-    assert_eq!(
-        names,
-        vec!["create_point".to_string(), "scale_point".to_string()],
-        "manifest entries don't match expected set"
-    );
-
-    // Spot-check one entry's LibraryFunctionLoad shape:
-    // `LibraryFunctionLoad["<path>", "create_point", {ByteArray}, ByteArray]`.
-    let create_rule = entries
+    // Spot-check that the `add` function (always present in types_wxf example)
+    // has the expected `LibraryFunctionLoad[..., "add", {ByteArray}, ByteArray]`
+    // shape.
+    let add_rule = entries
         .iter()
-        .find(|r| {
-            r.try_as_normal().unwrap().elements()[0].try_as_str() == Some("create_point")
-        })
-        .expect("create_point entry");
-    let create_lf = create_rule.try_as_normal().unwrap().elements()[1]
+        .find(|r| r.try_as_normal().unwrap().elements()[0].try_as_str() == Some("add"))
+        .unwrap_or_else(|| panic!("expected `add` in manifest, got {:?}", names));
+    let add_lf = add_rule.try_as_normal().unwrap().elements()[1]
         .try_as_normal()
         .expect("rule value should be LibraryFunctionLoad[...]");
     assert_eq!(
-        create_lf.head().try_as_symbol().unwrap().as_str(),
+        add_lf.head().try_as_symbol().unwrap().as_str(),
         "System`LibraryFunctionLoad"
     );
-    let lf_args = create_lf.elements();
+    let lf_args = add_lf.elements();
     // [0] = library path string, [1] = exported name, [2] = arg types, [3] = return type
     assert_eq!(lf_args.len(), 4);
-    assert_eq!(lf_args[1].try_as_str(), Some("create_point"));
+    assert_eq!(lf_args[1].try_as_str(), Some("add"));
     // The arg types slot should be `{ByteArray}`; return should be `ByteArray`.
     let arg_tys = lf_args[2]
         .try_as_normal()

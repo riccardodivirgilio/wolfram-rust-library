@@ -366,48 +366,15 @@ where
 //==============================================================================
 
 macro_rules! impl_vec_numeric_from_cursor {
-    ($($t:ty => $variant:ident),+ $(,)?) => {
+    ($($t:ty),+ $(,)?) => {
         $(
             impl FromWolfram for Vec<$t> {
                 fn from_cursor(c: &mut WxfCursor) -> Result<Self, Error> {
-                    let na = c.read_numeric_array()?;
-                    if na.data_type() != wolfram_expr::NumericArrayDataType::$variant {
-                        return Err(Error::Deserialize {
-                            path: String::new(),
-                            expected: stringify!(Vec<$t>),
-                            got: format!("NumericArray<{}>", na.data_type().name()),
-                        });
-                    }
-                    if na.dimensions().len() != 1 {
-                        return Err(Error::Deserialize {
-                            path: String::new(),
-                            expected: stringify!(Vec<$t>),
-                            got: format!(
-                                "NumericArray with rank {}",
-                                na.dimensions().len()
-                            ),
-                        });
-                    }
-                    let slice: &[$t] = na.try_as_slice::<$t>().ok_or_else(|| Error::Deserialize {
-                        path: String::new(),
-                        expected: stringify!(Vec<$t>),
-                        got: format!("NumericArray element-type mismatch"),
-                    })?;
-                    Ok(slice.to_vec())
+                    crate::numeric_in::read_vec::<$t>(c, "")
                 }
             }
         )+
     };
 }
 
-impl_vec_numeric_from_cursor!(
-    i8  => Integer8,
-    i16 => Integer16,
-    i32 => Integer32,
-    i64 => Integer64,
-    u16 => UnsignedInteger16,
-    u32 => UnsignedInteger32,
-    u64 => UnsignedInteger64,
-    f32 => Real32,
-    f64 => Real64,
-);
+impl_vec_numeric_from_cursor!(i8, i16, i32, i64, u16, u32, u64, f32, f64);

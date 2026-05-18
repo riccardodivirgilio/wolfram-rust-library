@@ -13,6 +13,7 @@
 #![warn(missing_docs)]
 
 pub mod from_wolfram;
+pub mod numeric_in;
 pub mod serializer;
 pub mod wl;
 pub mod wxf;
