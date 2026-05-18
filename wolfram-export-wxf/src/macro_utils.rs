@@ -56,10 +56,7 @@ where
     let n = cursor.read_function_header().map_err(|e| e.to_string())?;
     cursor.skip().map_err(|e| e.to_string())?; // discard head — any shape ok
     if n != n_expected {
-        return Err(format!(
-            "expected {} arguments wrapped in a List, got {}",
-            n_expected, n
-        ));
+        return Err(format!("expected {} args, got {}", n_expected, n));
     }
     read(&mut cursor).map_err(|e| e.to_string())
 }

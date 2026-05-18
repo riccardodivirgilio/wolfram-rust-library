@@ -230,7 +230,7 @@ fn render_wl(dylib_name: &str, entries: &[FunctionEntry]) -> String {
                 );
                 out.push_str(&format!(
                     "    \"{}\" -> Composition[BinaryDeserialize, ByteArray, \
-                     Apply[{}], BinarySerialize, List]{}\n",
+                     {}, BinarySerialize, List]{}\n",
                     e.name, load, sep
                 ));
             },
