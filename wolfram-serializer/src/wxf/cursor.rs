@@ -95,7 +95,7 @@ impl<'a> WxfCursor<'a> {
     }
 
     /// Consume one byte, advancing position by 1.
-    fn read_byte(&mut self) -> Result<u8, Error> {
+    pub(crate) fn read_byte(&mut self) -> Result<u8, Error> {
         let b = self.peek_token()?;
         self.pos += 1;
         Ok(b)
@@ -123,6 +123,15 @@ impl<'a> WxfCursor<'a> {
     /// payloads (strings, byte arrays, numeric arrays) where the width is
     /// determined at runtime.
     fn read_n(&mut self, n: usize) -> Result<Vec<u8>, Error> {
+        Ok(self.borrow_n(n)?.to_vec())
+    }
+
+    /// Advance past `n` bytes and return a zero-copy borrow of them.
+    /// The returned slice borrows from the cursor's internal buffer, so
+    /// no allocation occurs. Callers that need to further mutate the cursor
+    /// must drop this slice first.
+    pub(crate) fn borrow_n(&mut self, n: usize) -> Result<&[u8], Error> {
+        let start = self.pos;
         let end = self.pos.checked_add(n).ok_or_else(|| {
             Error::InvalidWxf("byte count overflow when reading payload".into())
         })?;
@@ -132,13 +141,12 @@ impl<'a> WxfCursor<'a> {
                 n
             )));
         }
-        let out = self.bytes[self.pos..end].to_vec();
         self.pos = end;
-        Ok(out)
+        Ok(&self.bytes[start..end])
     }
 
     /// Read a WXF varint (LE-base-128 with continuation bit).
-    fn read_varint(&mut self) -> Result<u64, Error> {
+    pub(crate) fn read_varint(&mut self) -> Result<u64, Error> {
         let mut result: u64 = 0;
         let mut shift: u32 = 0;
         loop {

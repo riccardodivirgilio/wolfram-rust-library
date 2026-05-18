@@ -13,8 +13,10 @@
 use wolfram_expr::NumericArrayDataType as DT;
 
 use crate::wxf::constants::{
-    token_kind_name, TOKEN_BINARY_STRING, TOKEN_NUMERIC_ARRAY, TOKEN_PACKED_ARRAY,
+    array_type_from_wxf, token_kind_name, TOKEN_BINARY_STRING, TOKEN_NUMERIC_ARRAY,
+    TOKEN_PACKED_ARRAY,
 };
+use wolfram_expr::PackedArrayDataType;
 use crate::wxf::cursor::WxfCursor;
 use crate::Error;
 
@@ -44,8 +46,7 @@ pub fn read_vec<T: NumericTarget>(
     c: &mut WxfCursor,
     path: &str,
 ) -> Result<Vec<T>, Error> {
-    let (src, _dims, bytes) = read_numeric_payload(c, path)?;
-    T::widen_from(src, &bytes).map_err(|m| err(path, "compatible numeric source", m))
+    with_numeric_payload(c, path, |src, bytes| T::widen_from(src, bytes))
 }
 
 /// Like [`read_vec`] but errors if the resulting buffer length doesn't equal `n`.
@@ -69,31 +70,53 @@ pub fn read_fixed<T: NumericTarget>(
 // Internal: token-dispatch + payload extraction
 //==============================================================================
 
-fn read_numeric_payload(
+/// Parse a numeric array header and call `f` with the element type and a
+/// zero-copy byte slice of the payload. Avoids the two extra copies that
+/// would result from going through `NumericArray`/`PackedArray` wrappers
+/// (one allocation in `read_n`, one in `as_bytes().to_vec()`).
+fn with_numeric_payload<R>(
     c: &mut WxfCursor,
     path: &str,
-) -> Result<(DT, Vec<usize>, Vec<u8>), Error> {
+    f: impl FnOnce(DT, &[u8]) -> Result<R, String>,
+) -> Result<R, Error> {
     let tag = c.peek_token()?;
     match tag {
-        TOKEN_NUMERIC_ARRAY => {
-            let na = c.read_numeric_array()?;
-            let dt = na.data_type();
-            let dims = na.dimensions().to_vec();
-            let bytes = na.as_bytes().to_vec();
-            Ok((dt, dims, bytes))
-        },
-        TOKEN_PACKED_ARRAY => {
-            let pa = c.read_packed_array()?;
-            let dt = pa.data_type().into_numeric();
-            let dims = pa.dimensions().to_vec();
-            let bytes = pa.as_bytes().to_vec();
-            Ok((dt, dims, bytes))
+        TOKEN_NUMERIC_ARRAY | TOKEN_PACKED_ARRAY => {
+            c.read_byte()?; // consume token
+            let type_byte = c.read_byte()?;
+            let dt = array_type_from_wxf(type_byte).ok_or_else(|| {
+                Error::InvalidWxf(format!(
+                    "unknown array element type: 0x{:02X}",
+                    type_byte
+                ))
+            })?;
+            let dt = if tag == TOKEN_PACKED_ARRAY {
+                PackedArrayDataType::try_new(dt)
+                    .ok_or_else(|| {
+                        Error::InvalidWxf(format!(
+                            "PackedArray does not support element type {:?}",
+                            dt
+                        ))
+                    })?
+                    .into_numeric()
+            } else {
+                dt
+            };
+            let rank = c.read_varint()? as usize;
+            let mut dims = Vec::with_capacity(rank);
+            for _ in 0..rank {
+                dims.push(c.read_varint()? as usize);
+            }
+            let byte_count = dims.iter().product::<usize>() * dt.size_in_bytes();
+            let bytes = c.borrow_n(byte_count)?;
+            f(dt, bytes).map_err(|m| err(path, "compatible numeric source", m))
         },
         TOKEN_BINARY_STRING => {
-            // ByteArray → NumericArray<Integer8>, 1-D, length == byte count.
-            let bytes = c.read_byte_array()?;
-            let dims = vec![bytes.len()];
-            Ok((DT::Integer8, dims, bytes))
+            // ByteArray → treat as NumericArray<Integer8>, 1-D.
+            c.read_byte()?; // consume token
+            let len = c.read_varint()? as usize;
+            let bytes = c.borrow_n(len)?;
+            f(DT::Integer8, bytes).map_err(|m| err(path, "compatible numeric source", m))
         },
         other => Err(err(
             path,
@@ -153,11 +176,33 @@ fn reject(src: DT, target: DT) -> String {
     )
 }
 
+/// Copy `bytes` into a fresh, properly-aligned `Vec<T>` in one memcpy.
+/// Used for the identity case where no element-type conversion is needed.
+///
+/// SAFETY: caller guarantees `bytes.len()` is an exact multiple of
+/// `size_of::<T>()` and that the bytes represent valid `T` values in
+/// native little-endian layout (which is true for all WXF numeric payloads
+/// on x86-64 / arm64 macOS).
+#[inline]
+unsafe fn identity_cast<T: Copy>(bytes: &[u8]) -> Vec<T> {
+    let elem_size = std::mem::size_of::<T>();
+    let n = bytes.len() / elem_size;
+    let mut out: Vec<T> = Vec::with_capacity(n);
+    std::ptr::copy_nonoverlapping(bytes.as_ptr(), out.as_mut_ptr() as *mut u8, bytes.len());
+    out.set_len(n);
+    out
+}
+
 macro_rules! impl_target {
     ($t:ty, $target:ident, { $($src:ident => $reader:ident),+ $(,)? }) => {
         impl NumericTarget for $t {
             const TARGET: DT = DT::$target;
             fn widen_from(src: DT, bytes: &[u8]) -> Result<Vec<Self>, String> {
+                if src == DT::$target {
+                    // Identity: bytes are already in native LE layout.
+                    // Allocate an aligned Vec<T> and do one memcpy — no element loop.
+                    return Ok(unsafe { identity_cast::<$t>(bytes) });
+                }
                 match src {
                     $(
                         DT::$src => Ok($reader(bytes).map(|v| v as $t).collect()),

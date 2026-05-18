@@ -7,6 +7,7 @@
 //! API, which expects each entry as a `(&dyn ToWolfram, &dyn ToWolfram, bool)`,
 //! without per-derive boilerplate types.
 
+#[cfg(debug_assertions)]
 use std::any::TypeId;
 
 use crate::serializer::ToWolfram;
