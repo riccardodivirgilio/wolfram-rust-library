@@ -13,13 +13,15 @@
 
 use wolfram_expr::Expr;
 use wolfram_library_link::NumericArray;
-use wolfram_serializer::{deserialize, serialize, Format, FromWolfram, ToWolfram};
+use wolfram_serializer::{deserialize, serialize, Format, FromWolfram, ToWolfram, WxfCursor};
 
-/// Compute the (arg types, return type) signature for a `#[export(wxf)]`
-/// function with `n` parameters. Each arg maps to a `ByteArray` on the WL side.
-pub fn wxf_signature(n: usize) -> Result<(Vec<Expr>, Expr), String> {
+/// (arg types, return type) signature for every `#[export(wxf)]` function:
+/// one ByteArray in, one ByteArray out. The WL side wraps all of the user
+/// function's arguments in a List and BinarySerializes it once, so the
+/// C-ABI surface is uniform regardless of the user function's arity.
+pub fn wxf_signature() -> Result<(Vec<Expr>, Expr), String> {
     Ok((
-        vec![Expr::symbol(wolfram_expr::Symbol::new("System`ByteArray")); n],
+        vec![Expr::symbol(wolfram_expr::Symbol::new("System`ByteArray"))],
         Expr::symbol(wolfram_expr::Symbol::new("System`ByteArray")),
     ))
 }
@@ -31,6 +33,35 @@ pub fn wxf_signature(n: usize) -> Result<(Vec<Expr>, Expr), String> {
 pub fn decode<A: FromWolfram>(input: &NumericArray<u8>) -> Result<A, String> {
     let bytes: &[u8] = input.as_slice();
     deserialize::<A>(bytes, Format::Wxf).map_err(|e| e.to_string())
+}
+
+/// Drive a [`WxfCursor`] over `input`'s bytes, expecting the wire shape
+/// `Function[<any head>, arg0, arg1, …]` with `n_expected` elements. The
+/// emitted bridge passes `read` as a small closure that reads each argument
+/// in turn via `<T as FromWolfram>::from_cursor`.
+///
+/// Used by the `#[export(wxf)]` proc-macro so every WXF function ends up with
+/// the same one-ByteArray-in / one-ByteArray-out C-ABI shape regardless of
+/// the user's arity.
+pub fn decode_args<R, F>(
+    input: &NumericArray<u8>,
+    n_expected: u64,
+    read: F,
+) -> Result<R, String>
+where
+    F: FnOnce(&mut WxfCursor) -> Result<R, wolfram_serializer::Error>,
+{
+    let bytes: &[u8] = input.as_slice();
+    let mut cursor = WxfCursor::new(bytes).map_err(|e| e.to_string())?;
+    let n = cursor.read_function_header().map_err(|e| e.to_string())?;
+    cursor.skip().map_err(|e| e.to_string())?; // discard head — any shape ok
+    if n != n_expected {
+        return Err(format!(
+            "expected {} arguments wrapped in a List, got {}",
+            n_expected, n
+        ));
+    }
+    read(&mut cursor).map_err(|e| e.to_string())
 }
 
 /// Build a `Failure["WxfDeserialize", <|"MessageTemplate" -> msg|>]` Expr that

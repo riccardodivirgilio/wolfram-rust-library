@@ -58,9 +58,6 @@ struct FunctionEntry {
     params: Vec<String>,
     #[serde(default)]
     ret: String,
-    // Wxf only
-    #[serde(default)]
-    nargs: usize,
 }
 
 // ── Entry point ──────────────────────────────────────────────────────────────
@@ -222,18 +219,18 @@ fn render_wl(dylib_name: &str, entries: &[FunctionEntry]) -> String {
                 ));
             },
             "Wxf" => {
-                let arg_spec = format!(
-                    "ConstantArray[{{LibraryDataType[NumericArray, \"UnsignedInteger8\"], \"Constant\"}}, {}]",
-                    e.nargs
-                );
+                // Every WXF function has a single ByteArray-in / ByteArray-out
+                // C-ABI surface; the WL side bundles all args into a List and
+                // calls BinarySerialize once.
                 let load = format!(
-                    "LibraryFunctionLoad[$lib, \"{}\", {}, \
+                    "LibraryFunctionLoad[$lib, \"{}\", \
+                     {{{{LibraryDataType[NumericArray, \"UnsignedInteger8\"], \"Constant\"}}}}, \
                      {{LibraryDataType[NumericArray, \"UnsignedInteger8\"], Automatic}}]",
-                    e.name, arg_spec
+                    e.name
                 );
                 out.push_str(&format!(
                     "    \"{}\" -> Composition[BinaryDeserialize, ByteArray, \
-                     Apply[{}], Map[BinarySerialize], List]{}\n",
+                     Apply[{}], BinarySerialize, List]{}\n",
                     e.name, load, sep
                 ));
             },

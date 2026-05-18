@@ -96,7 +96,9 @@ pub extern "C" fn __wolfram_manifest__(out_len: *mut usize) -> *const u8 {
 /// function. Consumed by `cargo wolfram build` via `libloading` — no WL kernel needed.
 ///
 /// JSON shape: `[{"name":"add","kind":"Native","params":["Real","Real"],"ret":"Real"}, ...]`
-/// where `kind` is `"Native"`, `"Wstp"`, or `"Wxf"` and `"nargs"` is present for `"Wxf"`.
+/// where `kind` is `"Native"`, `"Wstp"`, or `"Wxf"`. Wxf entries carry only
+/// `name` + `kind` — the wire shape is always single-ByteArray-in /
+/// single-ByteArray-out regardless of the user function's arity.
 /// The returned pointer is a `'static` C string (leaked once, never freed).
 #[cfg(feature = "automate-function-loading-boilerplate")]
 #[no_mangle]
@@ -133,10 +135,9 @@ pub extern "C" fn __wolfram_manifest_json__() -> *const std::os::raw::c_char {
                     json_str(name)
                 ));
             },
-            ExportEntry::Wxf { name, signature } => {
-                let nargs = signature().map(|(p, _)| p.len()).unwrap_or(0);
+            ExportEntry::Wxf { name, .. } => {
                 entries.push_str(&format!(
-                    r#"{{"name":{},"kind":"Wxf","nargs":{nargs}}}"#,
+                    r#"{{"name":{},"kind":"Wxf"}}"#,
                     json_str(name)
                 ));
             },

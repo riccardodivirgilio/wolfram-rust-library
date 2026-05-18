@@ -234,55 +234,70 @@ fn export_wxf_function(
 ) -> TokenStream2 {
     let p = &prefix.crate_path;
     let n = params.len();
+    let n_u64 = n as u64;
 
-    // One ident per parameter: __input0, __input1, ...
-    let input_idents: Vec<_> = (0..n)
-        .map(|i| quote::format_ident!("__input{}", i))
-        .collect();
-    let arg_idents: Vec<_> = (0..n).map(|i| quote::format_ident!("__arg{}", i)).collect();
-
-    // Bridge params: `__input0: &NumericArray<u8>, __input1: &NumericArray<u8>, ...`
-    let bridge_params: Vec<_> = input_idents
+    // The user's parameter types, in declaration order. `self` (Receiver) is
+    // not expected for free functions but we filter it out defensively.
+    let param_types: Vec<&syn::Type> = params
         .iter()
-        .map(|id| quote! { #id: &#p::NumericArray<u8> })
-        .collect();
-
-    // Decode stmts: each `decode` returns `Result<_, String>`. On the first
-    // Err, encode a Failure["WxfDeserialize", ...] and return from the bridge
-    // body without invoking the user function.
-    let decode_stmts: Vec<_> = input_idents
-        .iter()
-        .zip(arg_idents.iter())
-        .map(|(inp, arg)| quote! {
-            let #arg = match #p::macro_utils::decode(#inp) {
-                ::core::result::Result::Ok(v) => v,
-                ::core::result::Result::Err(__msg) => {
-                    return #p::macro_utils::encode(
-                        &#p::macro_utils::deserialize_failure_expr(&__msg),
-                    );
-                }
-            };
+        .filter_map(|arg| match arg {
+            syn::FnArg::Typed(pt) => Some(&*pt.ty),
+            _ => None,
         })
         .collect();
 
-    // `fn(_, _, ...) -> _` placeholders for the NativeFunction coercion.
-    let underscore_params: Vec<_> = (0..n).map(|_| quote! { _ }).collect();
+    let arg_idents: Vec<_> = (0..n).map(|i| quote::format_ident!("__arg{}", i)).collect();
+
+    // Tuple-pattern with a trailing comma for the 1-arity case (Rust syntax).
+    let tuple_pat = match arg_idents.len() {
+        0 => quote! { () },
+        1 => {
+            let id = &arg_idents[0];
+            quote! { (#id,) }
+        },
+        _ => quote! { (#(#arg_idents),*) },
+    };
+    // Tuple-expression of `<Ti as FromWolfram>::from_cursor(__c)?` calls.
+    let from_cursor_calls: Vec<_> = param_types
+        .iter()
+        .map(|t| {
+            quote! { <#t as ::wolfram_serializer::FromWolfram>::from_cursor(__c)? }
+        })
+        .collect();
+    let tuple_read = match from_cursor_calls.len() {
+        0 => quote! { () },
+        1 => {
+            let c = &from_cursor_calls[0];
+            quote! { (#c,) }
+        },
+        _ => quote! { (#(#from_cursor_calls),*) },
+    };
 
     let mut tokens = quote! {
         mod #name {
             use super::*;
 
-            // Each ByteArray arg is passed in `Constant` memory mode — the
-            // kernel retains ownership, so we take references here.
-            // Panics (including deserialization failures) are caught and
-            // returned as a WXF-encoded Failure[] expression.
-            fn __wxf_bridge(
-                #(#bridge_params),*
-            ) -> #p::NumericArray<u8> {
+            // Single ByteArray arg containing a WXF-serialized `List[args…]`.
+            // The kernel retains ownership of the buffer (Constant mode), so
+            // we take a reference. Panics (including deserialization failures
+            // not caught explicitly) are converted to WXF-encoded Failure[]
+            // expressions by `call_and_encode_panic`.
+            fn __wxf_bridge(__input: &#p::NumericArray<u8>) -> #p::NumericArray<u8> {
                 #p::macro_utils::call_and_encode_panic(|| {
-                    #(#decode_stmts)*
-                    let __result = super::#name(#(#arg_idents),*);
-                    #p::macro_utils::encode(&__result)
+                    let __decoded = #p::macro_utils::decode_args(__input, #n_u64, |__c| {
+                        ::core::result::Result::Ok(#tuple_read)
+                    });
+                    match __decoded {
+                        ::core::result::Result::Ok(#tuple_pat) => {
+                            let __result = super::#name(#(#arg_idents),*);
+                            #p::macro_utils::encode(&__result)
+                        }
+                        ::core::result::Result::Err(__msg) => {
+                            #p::macro_utils::encode(
+                                &#p::macro_utils::deserialize_failure_expr(&__msg),
+                            )
+                        }
+                    }
                 })
             }
 
@@ -293,7 +308,7 @@ fn export_wxf_function(
                 args: *mut #p::sys::MArgument,
                 res: #p::sys::MArgument,
             ) -> std::os::raw::c_int {
-                let func: fn(#(#underscore_params),*) -> _ = __wxf_bridge;
+                let func: fn(_) -> _ = __wxf_bridge;
                 #p::macro_utils::call_wxf_wolfram_library_function(
                     lib,
                     args,
@@ -306,12 +321,11 @@ fn export_wxf_function(
     };
 
     if !hidden && cfg!(feature = "automate-function-loading-boilerplate") {
-        let n_lit = n;
         tokens.extend(quote! {
             #p::inventory::submit! {
                 #p::macro_utils::LibraryLinkFunction::Wxf {
                     name: stringify!(#exported_name),
-                    signature: || #p::macro_utils::wxf_signature(#n_lit),
+                    signature: || #p::macro_utils::wxf_signature(),
                 }
             }
         });
