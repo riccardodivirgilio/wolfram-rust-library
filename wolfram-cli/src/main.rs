@@ -1,6 +1,7 @@
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 use serde::Deserialize;
+use sha2::{Digest, Sha256};
 use std::ffi::CStr;
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
@@ -126,25 +127,43 @@ fn cmd_build(args: BuildArgs) -> Result<()> {
 // ── loader generation ────────────────────────────────────────────────────────
 
 fn generate_loader(dylib: &Path, out_dir: Option<&Path>) -> Result<()> {
-    let entries = load_manifest(dylib)?;
+    // Compute SHA256 of the dylib bytes.
+    let dylib_bytes = std::fs::read(dylib)
+        .with_context(|| format!("failed to read {}", dylib.display()))?;
+    let hash = format!("{:x}", Sha256::digest(&dylib_bytes));
 
-    let dylib_name = dylib
-        .file_name()
-        .and_then(|n| n.to_str())
-        .context("dylib has no filename")?;
+    let ext = dylib.extension().and_then(|e| e.to_str()).unwrap_or("dylib");
+    let hashed_name = format!("{}.{}", hash, ext);
 
-    let wl = render_wl(dylib_name, &entries);
-
-    let out_path = if let Some(dir) = out_dir {
-        dir.join(dylib.file_stem().unwrap()).with_extension("wl")
+    // Output folder: <out_dir|dylib_dir>/<stem>/
+    let stem = dylib.file_stem().unwrap();
+    let folder = if let Some(dir) = out_dir {
+        dir.join(stem)
     } else {
-        dylib.with_extension("wl")
+        dylib.parent().unwrap_or(Path::new(".")).join(stem)
     };
 
-    std::fs::write(&out_path, &wl)
-        .with_context(|| format!("failed to write {}", out_path.display()))?;
+    // Clear and recreate the folder.
+    if folder.exists() {
+        std::fs::remove_dir_all(&folder)
+            .with_context(|| format!("failed to clear {}", folder.display()))?;
+    }
+    std::fs::create_dir_all(&folder)
+        .with_context(|| format!("failed to create {}", folder.display()))?;
 
-    eprintln!("cargo wolfram: generated {}", out_path.display());
+    // Copy dylib under its content hash.
+    let hashed_dylib = folder.join(&hashed_name);
+    std::fs::copy(dylib, &hashed_dylib)
+        .with_context(|| format!("failed to copy dylib to {}", hashed_dylib.display()))?;
+
+    // Generate manifest.wl next to the hashed dylib.
+    let entries = load_manifest(dylib)?;
+    let wl = render_wl(&hashed_name, &entries);
+    let manifest_path = folder.join("manifest.wl");
+    std::fs::write(&manifest_path, &wl)
+        .with_context(|| format!("failed to write {}", manifest_path.display()))?;
+
+    eprintln!("cargo wolfram: generated {}", folder.display());
     Ok(())
 }
 

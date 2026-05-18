@@ -123,11 +123,13 @@ impl std::fmt::Display for Error {
                 path,
                 expected,
                 got,
-            } => write!(
-                f,
-                "FromWolfram: at {:?}: expected {}, got {}",
-                path, expected, got
-            ),
+            } => {
+                if path.is_empty() {
+                    write!(f, "expected {}, got {}", expected, got)
+                } else {
+                    write!(f, "at {}: expected {}, got {}", path, expected, got)
+                }
+            },
         }
     }
 }
