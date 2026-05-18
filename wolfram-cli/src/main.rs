@@ -16,7 +16,10 @@ enum Cargo {
 }
 
 #[derive(Parser)]
-#[command(name = "wolfram", about = "Build and package Wolfram LibraryLink crates")]
+#[command(
+    name = "wolfram",
+    about = "Build and package Wolfram LibraryLink crates"
+)]
 struct WolframArgs {
     #[command(subcommand)]
     cmd: WolframCmd,
@@ -208,7 +211,7 @@ fn render_wl(dylib_name: &str, entries: &[FunctionEntry]) -> String {
                 );
                 out.push_str(&format!(
                     "    \"{}\" -> Composition[BinaryDeserialize, ByteArray, \
-                     Apply[{}, Map[BinarySerialize], List]]{}\n",
+                     Apply[{}], Map[BinarySerialize], List]{}\n",
                     e.name, load, sep
                 ));
             },
