@@ -61,11 +61,8 @@ fn expand_struct(
 ) -> Result<TokenStream> {
     match &data.fields {
         Fields::Named(named) => {
-            // Expect Association header → loop reading rules (rule, key,
-            // value). For each known key, dispatch the value through the
-            // field's FieldKind; for unknown keys, skip the value.
             let fields: Vec<&syn::Field> = named.named.iter().collect();
-            // Build (key_string, ident, FieldKind, span) per field.
+            let arity = fields.len();
             let mut field_keys: Vec<String> = Vec::with_capacity(fields.len());
             let mut field_idents: Vec<&syn::Ident> = Vec::with_capacity(fields.len());
             for f in &fields {
@@ -74,7 +71,8 @@ fn expand_struct(
                 field_keys.push(attrs.rename.unwrap_or_else(|| id.to_string()));
                 field_idents.push(id);
             }
-            // Per-field `Option<T>` slots that get filled as keys arrive.
+
+            // Association branch: key-driven, order-independent.
             let slot_decls = fields.iter().zip(&field_idents).map(|(f, id)| {
                 let ty = &f.ty;
                 let slot = format_ident!("__slot_{}", id);
@@ -82,7 +80,6 @@ fn expand_struct(
                     let mut #slot: ::core::option::Option<#ty> = ::core::option::Option::None;
                 }
             });
-            // Match arms: known key → fill slot.
             let key_arms =
                 fields
                     .iter()
@@ -99,10 +96,6 @@ fn expand_struct(
                             }
                         }
                     });
-            // Unwrap each slot at the end.  `Option<T>` fields default to
-            // `None` when the key is absent — `slot` for those is
-            // `Option<Option<T>>`, and `slot.flatten()` collapses the
-            // never-seen and seen-as-None cases together.
             let unwraps = fields.iter().zip(&field_idents).zip(&field_keys).map(|((f, id), k)| {
                 let slot = format_ident!("__slot_{}", id);
                 let span = f.ty.span();
@@ -119,19 +112,48 @@ fn expand_struct(
                     }
                 }
             });
+
+            // Positional branch: Function[<any head>, field0, field1, ...].
+            // Head is discarded; fields are read in declaration order.
+            let pos_extracts = fields.iter().zip(&field_idents).map(|(f, id)| {
+                let path = format!("{}.{}", name_str, id);
+                let span = f.ty.span();
+                let extract = expand_field_extract(&f.ty, &path, span);
+                quote_spanned! { span => let #id = #extract; }
+            });
+
             Ok(quote! {
-                let __n = __c.read_association_header()?;
-                #(#slot_decls)*
-                for _ in 0..__n {
-                    let _delayed = __c.read_rule()?;
-                    let __key = __c.read_string()?;
-                    match __key.as_str() {
-                        #(#key_arms)*
-                        _ => __c.skip()?, // unknown key: discard the value
+                const __TOKEN_ASSOC: u8 = b'A';
+                if __c.peek_token()? == __TOKEN_ASSOC {
+                    // Association: read by key, order-independent.
+                    let __n = __c.read_association_header()?;
+                    #(#slot_decls)*
+                    for _ in 0..__n {
+                        let _delayed = __c.read_rule()?;
+                        let __key = __c.read_string()?;
+                        match __key.as_str() {
+                            #(#key_arms)*
+                            _ => __c.skip()?,
+                        }
                     }
+                    #(#unwraps)*
+                    ::core::result::Result::Ok(#name { #(#field_idents),* })
+                } else {
+                    // Function[<any head>, ...]: read fields positionally.
+                    let __arity = __c.read_function_header()?;
+                    if __arity != #arity as u64 {
+                        return ::core::result::Result::Err(
+                            ::wolfram_serializer::from_wolfram::err_at(
+                                #name_str,
+                                concat!("Function with ", stringify!(#arity), " arguments"),
+                                format!("Function with {} arguments", __arity),
+                            ),
+                        );
+                    }
+                    __c.skip()?; // discard head
+                    #(#pos_extracts)*
+                    ::core::result::Result::Ok(#name { #(#field_idents),* })
                 }
-                #(#unwraps)*
-                ::core::result::Result::Ok(#name { #(#field_idents),* })
             })
         },
         Fields::Unnamed(unnamed) => {
