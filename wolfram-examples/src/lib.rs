@@ -37,8 +37,8 @@ pub fn duplicate(e: Expr) -> Expr {
 
 #[derive(Debug, Clone, PartialEq, ToWolfram, FromWolfram)]
 pub struct Point {
-    pub x: f64,
-    pub y: f64,
+    pub x: i16,
+    pub y: i16,
 }
 
 /// `Vec<f64>` fields are encoded as packed `NumericArray<Real64>` in WXF,

@@ -18,7 +18,7 @@ use syn::{Data, DataEnum, DataStruct, DeriveInput, Fields, Result};
 use crate::shared::{
     parse_container_attrs, parse_field_attrs, qualify_symbol, ContainerAttrs,
 };
-use crate::ty_classify::{classify, is_option_type, FieldKind};
+use crate::ty_classify::{classify, is_option_type, numeric_primitive_name, FieldKind};
 
 pub(crate) fn expand(input: &DeriveInput) -> Result<TokenStream> {
     let name = &input.ident;
@@ -122,37 +122,75 @@ fn expand_struct(
                 quote_spanned! { span => let #id = #extract; }
             });
 
-            Ok(quote! {
-                const __TOKEN_ASSOC: u8 = b'A';
-                if __c.peek_token()? == __TOKEN_ASSOC {
-                    // Association: read by key, order-independent.
-                    let __n = __c.read_association_header()?;
-                    #(#slot_decls)*
-                    for _ in 0..__n {
-                        let _delayed = __c.read_rule()?;
-                        let __key = __c.read_string()?;
-                        match __key.as_str() {
-                            #(#key_arms)*
-                            _ => __c.skip()?,
-                        }
-                    }
-                    #(#unwraps)*
-                    ::core::result::Result::Ok(#name { #(#field_idents),* })
+            // Numeric-payload branch (only enabled when every field shares the
+            // same numeric primitive type — e.g. all `f64` or all `i16`).
+            // Accepts NumericArray, PackedArray, or ByteArray on the wire and
+            // distributes the (widened) elements across the fields in order.
+            let common_numeric_ty: Option<&syn::Type> = fields.first().and_then(|first| {
+                let first_name = numeric_primitive_name(&first.ty)?;
+                if fields
+                    .iter()
+                    .all(|f| numeric_primitive_name(&f.ty).as_deref() == Some(&first_name))
+                {
+                    Some(&first.ty)
                 } else {
-                    // Function[<any head>, ...]: read fields positionally.
-                    let __arity = __c.read_function_header()?;
-                    if __arity != #arity as u64 {
-                        return ::core::result::Result::Err(
-                            ::wolfram_serializer::from_wolfram::err_at(
-                                #name_str,
-                                concat!("Function with ", stringify!(#arity), " arguments"),
-                                format!("Function with {} arguments", __arity),
-                            ),
-                        );
+                    None
+                }
+            });
+            let numeric_branch = if let Some(t) = common_numeric_ty {
+                let assigns = field_idents.iter().enumerate().map(|(i, id)| {
+                    quote! { let #id: #t = __slice[#i]; }
+                });
+                quote! {
+                    // 0xC2 = NumericArray, 0xC1 = PackedArray, b'B' = ByteArray.
+                    __tok if __tok == 0xC2u8 || __tok == 0xC1u8 || __tok == b'B' => {
+                        let __slice: ::std::vec::Vec<#t> =
+                            ::wolfram_serializer::numeric_in::read_fixed::<#t>(
+                                __c, #name_str, #arity,
+                            )?;
+                        #(#assigns)*
+                        return ::core::result::Result::Ok(#name { #(#field_idents),* });
                     }
-                    __c.skip()?; // discard head
-                    #(#pos_extracts)*
-                    ::core::result::Result::Ok(#name { #(#field_idents),* })
+                }
+            } else {
+                quote! {}
+            };
+
+            Ok(quote! {
+                let __tok = __c.peek_token()?;
+                match __tok {
+                    b'A' => {
+                        // Association: read by key, order-independent.
+                        let __n = __c.read_association_header()?;
+                        #(#slot_decls)*
+                        for _ in 0..__n {
+                            let _delayed = __c.read_rule()?;
+                            let __key = __c.read_string()?;
+                            match __key.as_str() {
+                                #(#key_arms)*
+                                _ => __c.skip()?,
+                            }
+                        }
+                        #(#unwraps)*
+                        ::core::result::Result::Ok(#name { #(#field_idents),* })
+                    }
+                    #numeric_branch
+                    _ => {
+                        // Function[<any head>, ...]: read fields positionally.
+                        let __arity = __c.read_function_header()?;
+                        if __arity != #arity as u64 {
+                            return ::core::result::Result::Err(
+                                ::wolfram_serializer::from_wolfram::err_at(
+                                    #name_str,
+                                    concat!("Function with ", stringify!(#arity), " arguments"),
+                                    format!("Function with {} arguments", __arity),
+                                ),
+                            );
+                        }
+                        __c.skip()?; // discard head
+                        #(#pos_extracts)*
+                        ::core::result::Result::Ok(#name { #(#field_idents),* })
+                    }
                 }
             })
         },

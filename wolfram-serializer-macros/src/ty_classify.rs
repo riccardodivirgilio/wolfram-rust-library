@@ -223,6 +223,19 @@ fn vec_inner(ty: &Type) -> Option<&Type> {
     }
 }
 
+/// Returns the primitive identifier (e.g. `"i32"`) iff `ty` is one of the 10
+/// numeric primitives (`i8..i64`, `u8..u64`, `f32`, `f64`). Used by the
+/// deserialize derive to detect "all numeric same-typed fields" — structs
+/// that can also accept a single NumericArray/PackedArray/ByteArray payload.
+pub(crate) fn numeric_primitive_name(ty: &Type) -> Option<String> {
+    let prim = primitive_ident_of(ty)?;
+    match prim.as_str() {
+        "i8" | "i16" | "i32" | "i64" | "u8" | "u16" | "u32" | "u64" | "f32"
+        | "f64" => Some(prim),
+        _ => None,
+    }
+}
+
 /// Returns the bare primitive identifier (e.g. "i32") if `ty` is a path with
 /// a single-segment identifier in the numeric primitive set.
 fn primitive_ident_of(ty: &Type) -> Option<String> {
