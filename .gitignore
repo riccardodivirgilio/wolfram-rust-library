@@ -3,3 +3,7 @@ Cargo.lock
 .DS_Store
 .idea
 .vscode
+*.dylib
+*.dll
+/notebooks/MacOSX-ARM64
+/notebooks/Windows-x86-64

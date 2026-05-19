@@ -1,0 +1,671 @@
+(*CacheID: 234*)
+(* Internal cache information:
+NotebookFileLineBreakTest
+NotebookFileLineBreakTest
+NotebookDataPosition[         0,          0]
+NotebookDataLength[     30202,        670]
+NotebookOptionsPosition[     26247,        601]
+NotebookOutlinePosition[     26639,        617]
+CellTagsIndexPosition[     26596,        614]
+WindowFrame->Normal*)
+
+(* Beginning of Notebook Content *)
+Notebook[{
+Cell[BoxData[{
+ RowBox[{
+  RowBox[{"repo", " ", "=", " ", 
+   RowBox[{"ExpandFileName", "[", 
+    RowBox[{"FileNameJoin", "[", 
+     RowBox[{"{", 
+      RowBox[{
+       RowBox[{"NotebookDirectory", "[", "]"}], ",", " ", "\"\<..\>\""}], 
+      "}"}], "]"}], "]"}]}], ";"}], "\n", 
+ RowBox[{
+  RowBox[{"out", " ", "=", " ", 
+   RowBox[{"NotebookDirectory", "[", "]"}]}], ";"}], "\n", 
+ RowBox[{
+  RowBox[{"cargo", " ", "=", " ", 
+   RowBox[{"FileNameJoin", "[", 
+    RowBox[{"{", 
+     RowBox[{
+     "$HomeDirectory", ",", " ", "\"\<.cargo\>\"", ",", " ", "\"\<bin\>\"", ",",
+       " ", "\"\<cargo\>\""}], "}"}], "]"}]}], ";"}]}], "Code",
+ CellChangeTimes->{
+  3.988175603096521*^9},ExpressionUUID->"ac79bbe5-5ce7-4326-8916-\
+371d899c59ed"],
+
+Cell[CellGroupData[{
+
+Cell[BoxData[{
+ RowBox[{
+  RowBox[{
+   RowBox[{"commands", " ", "=", " ", 
+    RowBox[{"{", "\n", "  ", 
+     RowBox[{
+      RowBox[{"cargo", " ", "->", " ", 
+       RowBox[{"{", 
+        RowBox[{"\"\<build\>\"", ",", " ", "\"\<-p\>\"", ",", 
+         " ", "\"\<wolfram-cli\>\"", ",", " ", "\"\<--release\>\""}], "}"}]}],
+       ",", "\n", "  ", 
+      RowBox[{"cargo", " ", "->", " ", 
+       RowBox[{"{", 
+        RowBox[{"\"\<install\>\"", ",", " ", "\"\<--path\>\"", ",", " ", 
+         RowBox[{"FileNameJoin", "[", 
+          RowBox[{"{", 
+           RowBox[{"repo", ",", " ", "\"\<wolfram-cli\>\""}], "}"}], "]"}], ",",
+          " ", "\"\<--force\>\""}], "}"}]}], ",", "\n", "  ", 
+      RowBox[{"cargo", " ", "->", " ", 
+       RowBox[{"{", 
+        RowBox[{"\"\<wolfram\>\"", ",", " ", "\"\<build\>\"", ",", 
+         " ", "\"\<--release\>\"", ",", " ", "\"\<--system-id\>\"", ",", 
+         " ", "\"\<Windows-x86-64\>\"", ",", "\n", "    ", "\"\<--out\>\"", ",",
+          " ", "out", ",", "\n", "    ", "\"\<--example\>\"", ",", 
+         " ", "\"\<types_wxf\>\"", ",", " ", "\"\<-p\>\"", ",", 
+         " ", "\"\<wolfram-export-wxf\>\""}], "}"}]}], ",", "\n", "  ", 
+      RowBox[{"cargo", " ", "->", " ", 
+       RowBox[{"{", 
+        RowBox[{"\"\<wolfram\>\"", ",", " ", "\"\<build\>\"", ",", 
+         " ", "\"\<--release\>\"", ",", " ", "\"\<--system-id\>\"", ",", 
+         " ", "\"\<Windows-x86-64\>\"", ",", "\n", "    ", "\"\<--out\>\"", ",",
+          " ", "out", ",", "\n", "    ", "\"\<--example\>\"", ",", 
+         " ", "\"\<types_native\>\"", ",", " ", "\"\<-p\>\"", ",", 
+         " ", "\"\<wolfram-export-native\>\""}], "}"}]}], ",", "\n", "  ", 
+      RowBox[{"cargo", " ", "->", " ", 
+       RowBox[{"{", 
+        RowBox[{"\"\<wolfram\>\"", ",", " ", "\"\<build\>\"", ",", 
+         " ", "\"\<--release\>\"", ",", "\n", "    ", "\"\<--out\>\"", ",", 
+         " ", "out", ",", "\n", "    ", "\"\<--example\>\"", ",", 
+         " ", "\"\<types_wstp\>\"", ",", " ", "\"\<-p\>\"", ",", 
+         " ", "\"\<wolfram-export-wstp\>\""}], "}"}]}]}], "\n", "}"}]}], 
+   ";"}], "\n"}], "\n", 
+ RowBox[{"ExternalEvaluate", "[", "\n", "  ", 
+  RowBox[{
+   RowBox[{"{", 
+    RowBox[{"\"\<Shell\>\"", ",", " ", 
+     RowBox[{"\"\<ProcessDirectory\>\"", " ", "->", " ", "repo"}], ",", " ", 
+     RowBox[{"\"\<ReturnType\>\"", " ", "->", 
+      " ", "\"\<StandardOutput\>\""}]}], "}"}], ",", "\n", "  ", "commands"}],
+   "\n", "]"}]}], "Code",
+ CellChangeTimes->{{3.988171546838888*^9, 3.988171558520997*^9}, {
+   3.9881715939340897`*^9, 3.988171638051962*^9}, 3.988171695785597*^9, {
+   3.988171738493071*^9, 3.9881717426144753`*^9}, {3.988171820232293*^9, 
+   3.988171829506083*^9}, {3.988171860415616*^9, 3.988171865675713*^9}, 
+   3.9881722094787207`*^9, {3.988173664032999*^9, 3.9881736902729797`*^9}, {
+   3.988173818076881*^9, 3.988173819982704*^9}, {3.988174594398143*^9, 
+   3.9881745973644857`*^9}, {3.988174980877521*^9, 3.9881750051277113`*^9}, 
+   3.9881753364279423`*^9, {3.9881756010867233`*^9, 
+   3.9881756054578123`*^9}},ExpressionUUID->"e1381906-ca6b-44c4-bf97-\
+c446ffe23ae4"],
+
+Cell[CellGroupData[{
+
+Cell[BoxData[
+ StyleBox["\<\"    Finished `release` profile [optimized] target(s) in \
+0.02s\"\>", "Message",
+  StripOnInput->False,
+  FontFamily->"Source Code Pro"]], "Print",
+ CellChangeTimes->{{3.988171615153262*^9, 3.988171638710476*^9}, 
+   3.9881717434507627`*^9, 3.988171829965941*^9, 3.988171866190946*^9, 
+   3.988172209907805*^9, {3.9881736670368357`*^9, 3.988173690822342*^9}, {
+   3.9881738142633038`*^9, 3.9881738205491467`*^9}, 3.988173954079832*^9, 
+   3.98817452729918*^9, 3.9881745979638042`*^9, {3.98817500590939*^9, 
+   3.9881750283348913`*^9}, 3.98817521171966*^9, {3.988175339186576*^9, 
+   3.98817535941055*^9}, 3.988175420135785*^9},
+ CellLabel->
+  "During evaluation of \
+In[129]:=",ExpressionUUID->"0c92ff22-d25c-4ae5-a967-8f7983656a65"],
+
+Cell[BoxData[
+ StyleBox["\<\"  Installing wolfram-cli v0.1.0 \
+(/Users/rdv/Wolfram/git-rust/wolfram-rust-library/wolfram-cli)\"\>", "Message",
+  StripOnInput->False,
+  FontFamily->"Source Code Pro"]], "Print",
+ CellChangeTimes->{{3.988171615153262*^9, 3.988171638710476*^9}, 
+   3.9881717434507627`*^9, 3.988171829965941*^9, 3.988171866190946*^9, 
+   3.988172209907805*^9, {3.9881736670368357`*^9, 3.988173690822342*^9}, {
+   3.9881738142633038`*^9, 3.9881738205491467`*^9}, 3.988173954079832*^9, 
+   3.98817452729918*^9, 3.9881745979638042`*^9, {3.98817500590939*^9, 
+   3.9881750283348913`*^9}, 3.98817521171966*^9, {3.988175339186576*^9, 
+   3.98817535941055*^9}, 3.988175420180132*^9},
+ CellLabel->
+  "During evaluation of \
+In[129]:=",ExpressionUUID->"c7839df7-9383-44d8-9b07-29b6c9dc2e99"],
+
+Cell[BoxData[
+ StyleBox["\<\"    Updating crates.io index\"\>", "Message",
+  StripOnInput->False,
+  FontFamily->"Source Code Pro"]], "Print",
+ CellChangeTimes->{{3.988171615153262*^9, 3.988171638710476*^9}, 
+   3.9881717434507627`*^9, 3.988171829965941*^9, 3.988171866190946*^9, 
+   3.988172209907805*^9, {3.9881736670368357`*^9, 3.988173690822342*^9}, {
+   3.9881738142633038`*^9, 3.9881738205491467`*^9}, 3.988173954079832*^9, 
+   3.98817452729918*^9, 3.9881745979638042`*^9, {3.98817500590939*^9, 
+   3.9881750283348913`*^9}, 3.98817521171966*^9, {3.988175339186576*^9, 
+   3.98817535941055*^9}, 3.988175420180737*^9},
+ CellLabel->
+  "During evaluation of \
+In[129]:=",ExpressionUUID->"6c4925ac-bb55-4555-adcb-eb3232440ed0"],
+
+Cell[BoxData[
+ StyleBox["\<\"     Locking 61 packages to latest compatible versions\"\>", 
+  "Message",
+  StripOnInput->False,
+  FontFamily->"Source Code Pro"]], "Print",
+ CellChangeTimes->{{3.988171615153262*^9, 3.988171638710476*^9}, 
+   3.9881717434507627`*^9, 3.988171829965941*^9, 3.988171866190946*^9, 
+   3.988172209907805*^9, {3.9881736670368357`*^9, 3.988173690822342*^9}, {
+   3.9881738142633038`*^9, 3.9881738205491467`*^9}, 3.988173954079832*^9, 
+   3.98817452729918*^9, 3.9881745979638042`*^9, {3.98817500590939*^9, 
+   3.9881750283348913`*^9}, 3.98817521171966*^9, {3.988175339186576*^9, 
+   3.98817535941055*^9}, 3.988175421657077*^9},
+ CellLabel->
+  "During evaluation of \
+In[129]:=",ExpressionUUID->"0bedc0bb-fab8-4d78-845f-8814cf6f9bc4"],
+
+Cell[BoxData[
+ StyleBox["\<\"      Adding generic-array v0.14.7 (available: v0.14.9)\"\>", 
+  "Message",
+  StripOnInput->False,
+  FontFamily->"Source Code Pro"]], "Print",
+ CellChangeTimes->{{3.988171615153262*^9, 3.988171638710476*^9}, 
+   3.9881717434507627`*^9, 3.988171829965941*^9, 3.988171866190946*^9, 
+   3.988172209907805*^9, {3.9881736670368357`*^9, 3.988173690822342*^9}, {
+   3.9881738142633038`*^9, 3.9881738205491467`*^9}, 3.988173954079832*^9, 
+   3.98817452729918*^9, 3.9881745979638042`*^9, {3.98817500590939*^9, 
+   3.9881750283348913`*^9}, 3.98817521171966*^9, {3.988175339186576*^9, 
+   3.98817535941055*^9}, 3.98817542167344*^9},
+ CellLabel->
+  "During evaluation of \
+In[129]:=",ExpressionUUID->"639969bc-a440-4e0c-8bfe-4a7d3bcf9757"],
+
+Cell[BoxData[
+ StyleBox["\<\"      Adding libloading v0.8.9 (available: v0.9.0)\"\>", 
+  "Message",
+  StripOnInput->False,
+  FontFamily->"Source Code Pro"]], "Print",
+ CellChangeTimes->{{3.988171615153262*^9, 3.988171638710476*^9}, 
+   3.9881717434507627`*^9, 3.988171829965941*^9, 3.988171866190946*^9, 
+   3.988172209907805*^9, {3.9881736670368357`*^9, 3.988173690822342*^9}, {
+   3.9881738142633038`*^9, 3.9881738205491467`*^9}, 3.988173954079832*^9, 
+   3.98817452729918*^9, 3.9881745979638042`*^9, {3.98817500590939*^9, 
+   3.9881750283348913`*^9}, 3.98817521171966*^9, {3.988175339186576*^9, 
+   3.98817535941055*^9}, 3.9881754216739807`*^9},
+ CellLabel->
+  "During evaluation of \
+In[129]:=",ExpressionUUID->"6063a945-6103-44ae-9f75-8247470a9765"],
+
+Cell[BoxData[
+ StyleBox["\<\"      Adding sha2 v0.10.9 (available: v0.11.0)\"\>", "Message",
+  
+  StripOnInput->False,
+  FontFamily->"Source Code Pro"]], "Print",
+ CellChangeTimes->{{3.988171615153262*^9, 3.988171638710476*^9}, 
+   3.9881717434507627`*^9, 3.988171829965941*^9, 3.988171866190946*^9, 
+   3.988172209907805*^9, {3.9881736670368357`*^9, 3.988173690822342*^9}, {
+   3.9881738142633038`*^9, 3.9881738205491467`*^9}, 3.988173954079832*^9, 
+   3.98817452729918*^9, 3.9881745979638042`*^9, {3.98817500590939*^9, 
+   3.9881750283348913`*^9}, 3.98817521171966*^9, {3.988175339186576*^9, 
+   3.98817535941055*^9}, 3.988175421677847*^9},
+ CellLabel->
+  "During evaluation of \
+In[129]:=",ExpressionUUID->"28043822-20c6-4b71-9bc9-cbdbde85e3b9"],
+
+Cell[BoxData[
+ StyleBox["\<\"    Finished `release` profile [optimized] target(s) in \
+1.55s\"\>", "Message",
+  StripOnInput->False,
+  FontFamily->"Source Code Pro"]], "Print",
+ CellChangeTimes->{{3.988171615153262*^9, 3.988171638710476*^9}, 
+   3.9881717434507627`*^9, 3.988171829965941*^9, 3.988171866190946*^9, 
+   3.988172209907805*^9, {3.9881736670368357`*^9, 3.988173690822342*^9}, {
+   3.9881738142633038`*^9, 3.9881738205491467`*^9}, 3.988173954079832*^9, 
+   3.98817452729918*^9, 3.9881745979638042`*^9, {3.98817500590939*^9, 
+   3.9881750283348913`*^9}, 3.98817521171966*^9, {3.988175339186576*^9, 
+   3.98817535941055*^9}, 3.988175421723811*^9},
+ CellLabel->
+  "During evaluation of \
+In[129]:=",ExpressionUUID->"b5603348-863d-4b9f-a8f0-e32be4b27d96"],
+
+Cell[BoxData[
+ StyleBox["\<\"   Replacing /Users/rdv/.cargo/bin/cargo-wolfram\"\>", 
+  "Message",
+  StripOnInput->False,
+  FontFamily->"Source Code Pro"]], "Print",
+ CellChangeTimes->{{3.988171615153262*^9, 3.988171638710476*^9}, 
+   3.9881717434507627`*^9, 3.988171829965941*^9, 3.988171866190946*^9, 
+   3.988172209907805*^9, {3.9881736670368357`*^9, 3.988173690822342*^9}, {
+   3.9881738142633038`*^9, 3.9881738205491467`*^9}, 3.988173954079832*^9, 
+   3.98817452729918*^9, 3.9881745979638042`*^9, {3.98817500590939*^9, 
+   3.9881750283348913`*^9}, 3.98817521171966*^9, {3.988175339186576*^9, 
+   3.98817535941055*^9}, 3.9881754217353086`*^9},
+ CellLabel->
+  "During evaluation of \
+In[129]:=",ExpressionUUID->"08aa338f-b085-4f85-88f7-ad34958dda7e"],
+
+Cell[BoxData[
+ StyleBox["\<\"    Replaced package `wolfram-cli v0.1.0 \
+(/Users/rdv/Wolfram/git-rust/wolfram-rust-library/wolfram-cli)` with \
+`wolfram-cli v0.1.0 \
+(/Users/rdv/Wolfram/git-rust/wolfram-rust-library/wolfram-cli)` (executable \
+`cargo-wolfram`)\"\>", "Message",
+  StripOnInput->False,
+  FontFamily->"Source Code Pro"]], "Print",
+ CellChangeTimes->{{3.988171615153262*^9, 3.988171638710476*^9}, 
+   3.9881717434507627`*^9, 3.988171829965941*^9, 3.988171866190946*^9, 
+   3.988172209907805*^9, {3.9881736670368357`*^9, 3.988173690822342*^9}, {
+   3.9881738142633038`*^9, 3.9881738205491467`*^9}, 3.988173954079832*^9, 
+   3.98817452729918*^9, 3.9881745979638042`*^9, {3.98817500590939*^9, 
+   3.9881750283348913`*^9}, 3.98817521171966*^9, {3.988175339186576*^9, 
+   3.98817535941055*^9}, 3.988175421735691*^9},
+ CellLabel->
+  "During evaluation of \
+In[129]:=",ExpressionUUID->"c2dea78d-9562-4f26-a417-3a145eadd0d5"],
+
+Cell[BoxData[
+ StyleBox["\<\"    Finished `release` profile [optimized] target(s) in \
+0.04s\"\>", "Message",
+  StripOnInput->False,
+  FontFamily->"Source Code Pro"]], "Print",
+ CellChangeTimes->{{3.988171615153262*^9, 3.988171638710476*^9}, 
+   3.9881717434507627`*^9, 3.988171829965941*^9, 3.988171866190946*^9, 
+   3.988172209907805*^9, {3.9881736670368357`*^9, 3.988173690822342*^9}, {
+   3.9881738142633038`*^9, 3.9881738205491467`*^9}, 3.988173954079832*^9, 
+   3.98817452729918*^9, 3.9881745979638042`*^9, {3.98817500590939*^9, 
+   3.9881750283348913`*^9}, 3.98817521171966*^9, {3.988175339186576*^9, 
+   3.98817535941055*^9}, 3.9881754220431623`*^9},
+ CellLabel->
+  "During evaluation of \
+In[129]:=",ExpressionUUID->"bde32bf7-c8ee-4b1a-afbc-ce1ca7504331"],
+
+Cell[BoxData[
+ StyleBox["\<\"    Finished `release` profile [optimized] target(s) in \
+0.03s\"\>", "Message",
+  StripOnInput->False,
+  FontFamily->"Source Code Pro"]], "Print",
+ CellChangeTimes->{{3.988171615153262*^9, 3.988171638710476*^9}, 
+   3.9881717434507627`*^9, 3.988171829965941*^9, 3.988171866190946*^9, 
+   3.988172209907805*^9, {3.9881736670368357`*^9, 3.988173690822342*^9}, {
+   3.9881738142633038`*^9, 3.9881738205491467`*^9}, 3.988173954079832*^9, 
+   3.98817452729918*^9, 3.9881745979638042`*^9, {3.98817500590939*^9, 
+   3.9881750283348913`*^9}, 3.98817521171966*^9, {3.988175339186576*^9, 
+   3.98817535941055*^9}, 3.988175422089418*^9},
+ CellLabel->
+  "During evaluation of \
+In[129]:=",ExpressionUUID->"eb49658e-002f-461c-9489-1eee55c90833"],
+
+Cell[BoxData["\<\"/Users/rdv/Wolfram/git-rust/wolfram-rust-library/notebooks/\
+MacOSX-ARM64/libtypes_wxf/manifest.wl\"\>"], "Print",
+ CellChangeTimes->{{3.988171615153262*^9, 3.988171638710476*^9}, 
+   3.9881717434507627`*^9, 3.988171829965941*^9, 3.988171866190946*^9, 
+   3.988172209907805*^9, {3.9881736670368357`*^9, 3.988173690822342*^9}, {
+   3.9881738142633038`*^9, 3.9881738205491467`*^9}, 3.988173954079832*^9, 
+   3.98817452729918*^9, 3.9881745979638042`*^9, {3.98817500590939*^9, 
+   3.9881750283348913`*^9}, 3.98817521171966*^9, {3.988175339186576*^9, 
+   3.98817535941055*^9}, 3.9881754222301064`*^9},
+ CellLabel->
+  "During evaluation of \
+In[129]:=",ExpressionUUID->"7d33857c-699d-4821-8855-05a9faaba809"],
+
+Cell[BoxData["\<\"/Users/rdv/Wolfram/git-rust/wolfram-rust-library/notebooks/\
+Windows-x86-64/libtypes_wxf/manifest.wl\"\>"], "Print",
+ CellChangeTimes->{{3.988171615153262*^9, 3.988171638710476*^9}, 
+   3.9881717434507627`*^9, 3.988171829965941*^9, 3.988171866190946*^9, 
+   3.988172209907805*^9, {3.9881736670368357`*^9, 3.988173690822342*^9}, {
+   3.9881738142633038`*^9, 3.9881738205491467`*^9}, 3.988173954079832*^9, 
+   3.98817452729918*^9, 3.9881745979638042`*^9, {3.98817500590939*^9, 
+   3.9881750283348913`*^9}, 3.98817521171966*^9, {3.988175339186576*^9, 
+   3.98817535941055*^9}, 3.988175422243552*^9},
+ CellLabel->
+  "During evaluation of \
+In[129]:=",ExpressionUUID->"ddb1e098-d0db-49bb-bf40-7168ad2ce22b"],
+
+Cell[BoxData[
+ StyleBox["\<\"    Finished `release` profile [optimized] target(s) in \
+0.02s\"\>", "Message",
+  StripOnInput->False,
+  FontFamily->"Source Code Pro"]], "Print",
+ CellChangeTimes->{{3.988171615153262*^9, 3.988171638710476*^9}, 
+   3.9881717434507627`*^9, 3.988171829965941*^9, 3.988171866190946*^9, 
+   3.988172209907805*^9, {3.9881736670368357`*^9, 3.988173690822342*^9}, {
+   3.9881738142633038`*^9, 3.9881738205491467`*^9}, 3.988173954079832*^9, 
+   3.98817452729918*^9, 3.9881745979638042`*^9, {3.98817500590939*^9, 
+   3.9881750283348913`*^9}, 3.98817521171966*^9, {3.988175339186576*^9, 
+   3.98817535941055*^9}, 3.988175422312195*^9},
+ CellLabel->
+  "During evaluation of \
+In[129]:=",ExpressionUUID->"b958aaa2-186d-465b-8f1d-34110851946d"],
+
+Cell[BoxData[
+ StyleBox["\<\"    Finished `release` profile [optimized] target(s) in \
+0.02s\"\>", "Message",
+  StripOnInput->False,
+  FontFamily->"Source Code Pro"]], "Print",
+ CellChangeTimes->{{3.988171615153262*^9, 3.988171638710476*^9}, 
+   3.9881717434507627`*^9, 3.988171829965941*^9, 3.988171866190946*^9, 
+   3.988172209907805*^9, {3.9881736670368357`*^9, 3.988173690822342*^9}, {
+   3.9881738142633038`*^9, 3.9881738205491467`*^9}, 3.988173954079832*^9, 
+   3.98817452729918*^9, 3.9881745979638042`*^9, {3.98817500590939*^9, 
+   3.9881750283348913`*^9}, 3.98817521171966*^9, {3.988175339186576*^9, 
+   3.98817535941055*^9}, 3.988175422348021*^9},
+ CellLabel->
+  "During evaluation of \
+In[129]:=",ExpressionUUID->"cd879a12-1147-4f72-af51-7473397e077c"],
+
+Cell[BoxData["\<\"/Users/rdv/Wolfram/git-rust/wolfram-rust-library/notebooks/\
+MacOSX-ARM64/libtypes_native/manifest.wl\"\>"], "Print",
+ CellChangeTimes->{{3.988171615153262*^9, 3.988171638710476*^9}, 
+   3.9881717434507627`*^9, 3.988171829965941*^9, 3.988171866190946*^9, 
+   3.988172209907805*^9, {3.9881736670368357`*^9, 3.988173690822342*^9}, {
+   3.9881738142633038`*^9, 3.9881738205491467`*^9}, 3.988173954079832*^9, 
+   3.98817452729918*^9, 3.9881745979638042`*^9, {3.98817500590939*^9, 
+   3.9881750283348913`*^9}, 3.98817521171966*^9, {3.988175339186576*^9, 
+   3.98817535941055*^9}, 3.9881754224869833`*^9},
+ CellLabel->
+  "During evaluation of \
+In[129]:=",ExpressionUUID->"082e9fa7-1a2f-4e8f-b1a9-809154640d6a"],
+
+Cell[BoxData["\<\"/Users/rdv/Wolfram/git-rust/wolfram-rust-library/notebooks/\
+Windows-x86-64/libtypes_native/manifest.wl\"\>"], "Print",
+ CellChangeTimes->{{3.988171615153262*^9, 3.988171638710476*^9}, 
+   3.9881717434507627`*^9, 3.988171829965941*^9, 3.988171866190946*^9, 
+   3.988172209907805*^9, {3.9881736670368357`*^9, 3.988173690822342*^9}, {
+   3.9881738142633038`*^9, 3.9881738205491467`*^9}, 3.988173954079832*^9, 
+   3.98817452729918*^9, 3.9881745979638042`*^9, {3.98817500590939*^9, 
+   3.9881750283348913`*^9}, 3.98817521171966*^9, {3.988175339186576*^9, 
+   3.98817535941055*^9}, 3.988175422497965*^9},
+ CellLabel->
+  "During evaluation of \
+In[129]:=",ExpressionUUID->"840ca0e3-ddb5-4c80-b4b4-f65f63a18175"],
+
+Cell[BoxData[
+ StyleBox["\<\"    Finished `release` profile [optimized] target(s) in \
+0.02s\"\>", "Message",
+  StripOnInput->False,
+  FontFamily->"Source Code Pro"]], "Print",
+ CellChangeTimes->{{3.988171615153262*^9, 3.988171638710476*^9}, 
+   3.9881717434507627`*^9, 3.988171829965941*^9, 3.988171866190946*^9, 
+   3.988172209907805*^9, {3.9881736670368357`*^9, 3.988173690822342*^9}, {
+   3.9881738142633038`*^9, 3.9881738205491467`*^9}, 3.988173954079832*^9, 
+   3.98817452729918*^9, 3.9881745979638042`*^9, {3.98817500590939*^9, 
+   3.9881750283348913`*^9}, 3.98817521171966*^9, {3.988175339186576*^9, 
+   3.98817535941055*^9}, 3.988175422575015*^9},
+ CellLabel->
+  "During evaluation of \
+In[129]:=",ExpressionUUID->"8121e8a0-f504-4c21-911d-9dfe559e0626"],
+
+Cell[BoxData["\<\"/Users/rdv/Wolfram/git-rust/wolfram-rust-library/notebooks/\
+MacOSX-ARM64/libtypes_wstp/manifest.wl\"\>"], "Print",
+ CellChangeTimes->{{3.988171615153262*^9, 3.988171638710476*^9}, 
+   3.9881717434507627`*^9, 3.988171829965941*^9, 3.988171866190946*^9, 
+   3.988172209907805*^9, {3.9881736670368357`*^9, 3.988173690822342*^9}, {
+   3.9881738142633038`*^9, 3.9881738205491467`*^9}, 3.988173954079832*^9, 
+   3.98817452729918*^9, 3.9881745979638042`*^9, {3.98817500590939*^9, 
+   3.9881750283348913`*^9}, 3.98817521171966*^9, {3.988175339186576*^9, 
+   3.98817535941055*^9}, 3.988175422721341*^9},
+ CellLabel->
+  "During evaluation of \
+In[129]:=",ExpressionUUID->"c14cd5c4-fd22-4d5e-97e1-1611f5911324"]
+}, Open  ]],
+
+Cell[BoxData[
+ RowBox[{"{", 
+  RowBox[{"\<\"\"\>", ",", "\<\"\"\>", 
+   ",", "\<\"/Users/rdv/Wolfram/git-rust/wolfram-rust-library/notebooks/\
+MacOSX-ARM64/libtypes_wxf/manifest.wl\\n/Users/rdv/Wolfram/git-rust/wolfram-\
+rust-library/notebooks/Windows-x86-64/libtypes_wxf/manifest.wl\"\>", 
+   ",", "\<\"/Users/rdv/Wolfram/git-rust/wolfram-rust-library/notebooks/\
+MacOSX-ARM64/libtypes_native/manifest.wl\\n/Users/rdv/Wolfram/git-rust/\
+wolfram-rust-library/notebooks/Windows-x86-64/libtypes_native/manifest.wl\"\>\
+", ",", "\<\"/Users/rdv/Wolfram/git-rust/wolfram-rust-library/notebooks/\
+MacOSX-ARM64/libtypes_wstp/manifest.wl\"\>"}], "}"}]], "Output",
+ CellChangeTimes->{
+  3.988174529876965*^9, 3.988174600647348*^9, {3.988175009864683*^9, 
+   3.988175029456064*^9}, 3.988175214439588*^9, {3.988175341020461*^9, 
+   3.988175360507389*^9}, 3.988175422738181*^9},
+ CellLabel->
+  "Out[133]=",ExpressionUUID->"e4a3f9c8-93fd-47e6-a8bf-37446dc394cb"]
+}, Open  ]],
+
+Cell[BoxData[
+ RowBox[{"SystemOpen", "[", "out", "]"}]], "Input",
+ CellChangeTimes->{{3.9881745106075*^9, 3.988174515819166*^9}},
+ CellLabel->
+  "In[123]:=",ExpressionUUID->"5e693f4d-2811-4690-b0d5-010598861eae"],
+
+Cell[CellGroupData[{
+
+Cell[BoxData[
+ RowBox[{"manifests", " ", "=", " ", 
+  RowBox[{"FileNames", "[", 
+   RowBox[{"\"\<*.wl\>\"", ",", " ", 
+    RowBox[{"{", 
+     RowBox[{"FileNameJoin", "[", 
+      RowBox[{"{", 
+       RowBox[{"out", ",", " ", "$SystemID"}], "}"}], "]"}], "}"}], ",", " ", 
+    "Infinity"}], "]"}]}]], "Input",
+ CellChangeTimes->{{3.9881737317928333`*^9, 3.9881737423992167`*^9}, {
+  3.988175441325183*^9, 3.988175461910508*^9}},
+ CellLabel->
+  "In[136]:=",ExpressionUUID->"296306ff-0c6d-40fb-aab5-7bb3be67486f"],
+
+Cell[BoxData[
+ RowBox[{"{", 
+  RowBox[{"\<\"/Users/rdv/Wolfram/git-rust/wolfram-rust-library/notebooks/\
+MacOSX-ARM64/libtypes_native/manifest.wl\"\>", 
+   ",", "\<\"/Users/rdv/Wolfram/git-rust/wolfram-rust-library/notebooks/\
+MacOSX-ARM64/libtypes_wstp/manifest.wl\"\>", 
+   ",", "\<\"/Users/rdv/Wolfram/git-rust/wolfram-rust-library/notebooks/\
+MacOSX-ARM64/libtypes_wxf/manifest.wl\"\>"}], "}"}]], "Output",
+ CellChangeTimes->{{3.9881737385981007`*^9, 3.988173742737768*^9}, {
+  3.988175437354745*^9, 3.988175462412566*^9}},
+ CellLabel->
+  "Out[136]=",ExpressionUUID->"008369ba-be3d-4169-9d42-6d53a16cd2eb"]
+}, Open  ]],
+
+Cell[BoxData[
+ RowBox[{
+  RowBox[{"libs", " ", "=", " ", 
+   RowBox[{"Association", " ", "@", " ", 
+    RowBox[{"Map", "[", 
+     RowBox[{
+      RowBox[{
+       RowBox[{
+        RowBox[{"FileNameTake", "[", 
+         RowBox[{"#", ",", " ", 
+          RowBox[{"{", 
+           RowBox[{"-", "2"}], "}"}]}], "]"}], " ", "->", " ", 
+        RowBox[{"Get", "[", "#", "]"}]}], " ", "&"}], ",", " ", "manifests"}],
+      "]"}]}]}], ";"}]], "Input",
+ CellChangeTimes->{{3.9881718722141457`*^9, 3.9881719697744007`*^9}, 
+   3.9881722159805737`*^9},
+ CellLabel->
+  "In[137]:=",ExpressionUUID->"f32dd1e5-293b-4783-8acd-f6620d518381"],
+
+Cell[CellGroupData[{
+
+Cell[BoxData[
+ RowBox[{
+  RowBox[{"libs", "[", 
+   RowBox[{"[", 
+    RowBox[{"\"\<libtypes_wxf\>\"", ",", " ", "\"\<duplicate\>\""}], "]"}], 
+   "]"}], "[", 
+  RowBox[{"RandomColor", "[", "]"}], "]"}]], "Input",
+ CellChangeTimes->{{3.9881719932533417`*^9, 3.9881720167064667`*^9}, {
+  3.988172193107416*^9, 3.988172199802649*^9}},
+ CellLabel->
+  "In[138]:=",ExpressionUUID->"72472454-86af-4235-9b1f-88536de0154d"],
+
+Cell[BoxData[
+ RowBox[{"{", 
+  RowBox[{
+   TemplateBox[<|
+    "color" -> RGBColor[
+      0.7250300282349027, 0.5136225838643875, 0.9208010570016387]|>,
+    "RGBColorSwatchTemplate"], ",", 
+   TemplateBox[<|
+    "color" -> RGBColor[
+      0.7250300282349027, 0.5136225838643875, 0.9208010570016387]|>,
+    "RGBColorSwatchTemplate"]}], "}"}]], "Output",
+ CellChangeTimes->{{3.988172003189947*^9, 3.988172017011998*^9}, 
+   3.98817220011167*^9, 3.988175465332307*^9},
+ CellLabel->
+  "Out[138]=",ExpressionUUID->"d186c2a3-4d95-443b-a3ae-59151ed59788"]
+}, Open  ]],
+
+Cell[CellGroupData[{
+
+Cell[BoxData[
+ RowBox[{
+  RowBox[{"libs", "[", 
+   RowBox[{"[", 
+    RowBox[{"\"\<libtypes_wxf\>\"", ",", " ", "\"\<dot\>\""}], "]"}], "]"}], "[", 
+  RowBox[{
+   RowBox[{"ByteArray", "[", 
+    RowBox[{"{", 
+     RowBox[{"2", ",", " ", "3", ",", " ", "4"}], "}"}], "]"}], ",", " ", 
+   RowBox[{"NumericArray", "[", 
+    RowBox[{
+     RowBox[{"{", 
+      RowBox[{"2", ",", " ", "3", ",", " ", "4"}], "}"}], ",", 
+     " ", "\"\<Real64\>\""}], "]"}]}], "]"}]], "Input",
+ CellChangeTimes->{{3.988172025769051*^9, 3.988172049345092*^9}, {
+  3.98817208128284*^9, 3.988172081954712*^9}},
+ CellLabel->
+  "In[139]:=",ExpressionUUID->"748e268b-e378-4936-8b9b-d360d7e9564c"],
+
+Cell[BoxData["29.`"], "Output",
+ CellChangeTimes->{{3.9881720449135723`*^9, 3.988172049636146*^9}, 
+   3.988172082236845*^9, 3.9881754673719187`*^9},
+ CellLabel->
+  "Out[139]=",ExpressionUUID->"0956e46b-df72-4557-b98d-f7ba03572756"]
+}, Open  ]],
+
+Cell[CellGroupData[{
+
+Cell[BoxData[
+ RowBox[{
+  RowBox[{"libs", "[", 
+   RowBox[{"[", 
+    RowBox[{"\"\<libtypes_native\>\"", ",", " ", "\"\<dot\>\""}], "]"}], 
+   "]"}], "[", 
+  RowBox[{
+   RowBox[{"NumericArray", "[", 
+    RowBox[{
+     RowBox[{"{", 
+      RowBox[{"2", ",", " ", "3", ",", " ", "4"}], "}"}], ",", 
+     " ", "\"\<Real64\>\""}], "]"}], ",", " ", 
+   RowBox[{"NumericArray", "[", 
+    RowBox[{
+     RowBox[{"{", 
+      RowBox[{"2", ",", " ", "3", ",", " ", "4"}], "}"}], ",", 
+     " ", "\"\<Real64\>\""}], "]"}]}], "]"}]], "Input",
+ CellChangeTimes->{{3.988172070917431*^9, 3.988172075771409*^9}},
+ CellLabel->
+  "In[140]:=",ExpressionUUID->"034d1e90-c550-4891-bde6-f5340df9a677"],
+
+Cell[BoxData["29.`"], "Output",
+ CellChangeTimes->{{3.988172072691174*^9, 3.9881720764283733`*^9}, 
+   3.9881754679789753`*^9},
+ CellLabel->
+  "Out[140]=",ExpressionUUID->"89cd4a39-10a3-420f-bdad-4004afa3ffc1"]
+}, Open  ]],
+
+Cell[CellGroupData[{
+
+Cell[BoxData[
+ RowBox[{
+  RowBox[{"libs", "[", 
+   RowBox[{"[", 
+    RowBox[{"\"\<libtypes_wstp\>\"", ",", " ", "\"\<dot\>\""}], "]"}], "]"}], 
+  "[", 
+  RowBox[{
+   RowBox[{"NumericArray", "[", 
+    RowBox[{
+     RowBox[{"{", 
+      RowBox[{"2", ",", " ", "3", ",", " ", "4"}], "}"}], ",", 
+     " ", "\"\<Real64\>\""}], "]"}], ",", " ", 
+   RowBox[{"NumericArray", "[", 
+    RowBox[{
+     RowBox[{"{", 
+      RowBox[{"2", ",", " ", "3", ",", " ", "4"}], "}"}], ",", 
+     " ", "\"\<Real64\>\""}], "]"}]}], "]"}]], "Input",
+ CellChangeTimes->{{3.9881720937874537`*^9, 3.988172094608514*^9}},
+ CellLabel->
+  "In[141]:=",ExpressionUUID->"dba72bdf-029e-4fe4-a99f-ff06113b1a41"],
+
+Cell[BoxData["29.`"], "Output",
+ CellChangeTimes->{3.988172094982852*^9, 3.988175468592492*^9},
+ CellLabel->
+  "Out[141]=",ExpressionUUID->"388adc41-1e37-4c59-b5fa-ca59501e7ab5"]
+}, Open  ]]
+},
+WindowSize->{947, 885},
+WindowMargins->{{107, Automatic}, {60, Automatic}},
+FrontEndVersion->"15.0 for Mac OS X ARM (64-bit) (May 6, 2026)",
+StyleDefinitions->"Default.nb",
+ExpressionUUID->"89449c41-4625-4075-9a04-85d5e5ce1122"
+]
+(* End of Notebook Content *)
+
+(* Internal cache information *)
+(*CellTagsOutline
+CellTagsIndex->{}
+*)
+(*CellTagsIndex
+CellTagsIndex->{}
+*)
+(*NotebookFileOutline
+Notebook[{
+Cell[400, 13, 739, 21, 88, "Code",ExpressionUUID->"ac79bbe5-5ce7-4326-8916-371d899c59ed"],
+Cell[CellGroupData[{
+Cell[1164, 38, 3110, 59, 371, "Code",ExpressionUUID->"e1381906-ca6b-44c4-bf97-c446ffe23ae4"],
+Cell[CellGroupData[{
+Cell[4299, 101, 762, 14, 21, "Print",ExpressionUUID->"0c92ff22-d25c-4ae5-a967-8f7983656a65"],
+Cell[5064, 117, 795, 14, 21, "Print",ExpressionUUID->"c7839df7-9383-44d8-9b07-29b6c9dc2e99"],
+Cell[5862, 133, 727, 13, 21, "Print",ExpressionUUID->"6c4925ac-bb55-4555-adcb-eb3232440ed0"],
+Cell[6592, 148, 756, 14, 21, "Print",ExpressionUUID->"0bedc0bb-fab8-4d78-845f-8814cf6f9bc4"],
+Cell[7351, 164, 756, 14, 21, "Print",ExpressionUUID->"639969bc-a440-4e0c-8bfe-4a7d3bcf9757"],
+Cell[8110, 180, 754, 14, 21, "Print",ExpressionUUID->"6063a945-6103-44ae-9f75-8247470a9765"],
+Cell[8867, 196, 748, 14, 21, "Print",ExpressionUUID->"28043822-20c6-4b71-9bc9-cbdbde85e3b9"],
+Cell[9618, 212, 762, 14, 21, "Print",ExpressionUUID->"b5603348-863d-4b9f-a8f0-e32be4b27d96"],
+Cell[10383, 228, 752, 14, 21, "Print",ExpressionUUID->"08aa338f-b085-4f85-88f7-ad34958dda7e"],
+Cell[11138, 244, 929, 17, 35, "Print",ExpressionUUID->"c2dea78d-9562-4f26-a417-3a145eadd0d5"],
+Cell[12070, 263, 764, 14, 21, "Print",ExpressionUUID->"bde32bf7-c8ee-4b1a-afbc-ce1ca7504331"],
+Cell[12837, 279, 762, 14, 21, "Print",ExpressionUUID->"eb49658e-002f-461c-9489-1eee55c90833"],
+Cell[13602, 295, 720, 11, 23, "Print",ExpressionUUID->"7d33857c-699d-4821-8855-05a9faaba809"],
+Cell[14325, 308, 720, 11, 23, "Print",ExpressionUUID->"ddb1e098-d0db-49bb-bf40-7168ad2ce22b"],
+Cell[15048, 321, 762, 14, 21, "Print",ExpressionUUID->"b958aaa2-186d-465b-8f1d-34110851946d"],
+Cell[15813, 337, 762, 14, 21, "Print",ExpressionUUID->"cd879a12-1147-4f72-af51-7473397e077c"],
+Cell[16578, 353, 723, 11, 23, "Print",ExpressionUUID->"082e9fa7-1a2f-4e8f-b1a9-809154640d6a"],
+Cell[17304, 366, 723, 11, 23, "Print",ExpressionUUID->"840ca0e3-ddb5-4c80-b4b4-f65f63a18175"],
+Cell[18030, 379, 762, 14, 21, "Print",ExpressionUUID->"8121e8a0-f504-4c21-911d-9dfe559e0626"],
+Cell[18795, 395, 719, 11, 23, "Print",ExpressionUUID->"c14cd5c4-fd22-4d5e-97e1-1611f5911324"]
+}, Open  ]],
+Cell[19529, 409, 949, 16, 115, "Output",ExpressionUUID->"e4a3f9c8-93fd-47e6-a8bf-37446dc394cb"]
+}, Open  ]],
+Cell[20493, 428, 212, 4, 29, "Input",ExpressionUUID->"5e693f4d-2811-4690-b0d5-010598861eae"],
+Cell[CellGroupData[{
+Cell[20730, 436, 509, 12, 29, "Input",ExpressionUUID->"296306ff-0c6d-40fb-aab5-7bb3be67486f"],
+Cell[21242, 450, 610, 11, 74, "Output",ExpressionUUID->"008369ba-be3d-4169-9d42-6d53a16cd2eb"]
+}, Open  ]],
+Cell[21867, 464, 622, 17, 29, "Input",ExpressionUUID->"f32dd1e5-293b-4783-8acd-f6620d518381"],
+Cell[CellGroupData[{
+Cell[22514, 485, 413, 10, 29, "Input",ExpressionUUID->"72472454-86af-4235-9b1f-88536de0154d"],
+Cell[22930, 497, 547, 14, 33, "Output",ExpressionUUID->"d186c2a3-4d95-443b-a3ae-59151ed59788"]
+}, Open  ]],
+Cell[CellGroupData[{
+Cell[23514, 516, 663, 17, 29, "Input",ExpressionUUID->"748e268b-e378-4936-8b9b-d360d7e9564c"],
+Cell[24180, 535, 232, 4, 33, "Output",ExpressionUUID->"0956e46b-df72-4557-b98d-f7ba03572756"]
+}, Open  ]],
+Cell[CellGroupData[{
+Cell[24449, 544, 676, 19, 29, "Input",ExpressionUUID->"034d1e90-c550-4891-bde6-f5340df9a677"],
+Cell[25128, 565, 210, 4, 33, "Output",ExpressionUUID->"89cd4a39-10a3-420f-bdad-4004afa3ffc1"]
+}, Open  ]],
+Cell[CellGroupData[{
+Cell[25375, 574, 675, 19, 29, "Input",ExpressionUUID->"dba72bdf-029e-4fe4-a99f-ff06113b1a41"],
+Cell[26053, 595, 178, 3, 33, "Output",ExpressionUUID->"388adc41-1e37-4c59-b5fa-ca59501e7ab5"]
+}, Open  ]]
+}
+]
+*)
+
