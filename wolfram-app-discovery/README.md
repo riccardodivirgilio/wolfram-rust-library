@@ -4,7 +4,7 @@
 ![License](https://img.shields.io/crates/l/wolfram-app-discovery.svg)
 [![Documentation](https://docs.rs/wolfram-app-discovery/badge.svg)](https://docs.rs/wolfram-app-discovery)
 
-#### [API Documentation](https://docs.rs/wolfram-app-discovery) | [CLI Documentation](./docs/CommandLineHelp.md) | [Changelog](./docs/CHANGELOG.md) | [Contributing](./CONTRIBUTING.md)
+#### [API Documentation](https://docs.rs/wolfram-app-discovery) | [CLI Documentation](./docs/CommandLineHelp.md) | [Changelog](./docs/CHANGELOG.md) | [Contributing](../CONTRIBUTING.md)
 
 ## About
 
@@ -140,9 +140,9 @@ command-line executable.
 Licensed under either of
 
 * Apache License, Version 2.0
-  ([LICENSE-APACHE](LICENSE-APACHE) or <http://www.apache.org/licenses/LICENSE-2.0>)
+  ([LICENSE-APACHE](../LICENSE-APACHE) or <http://www.apache.org/licenses/LICENSE-2.0>)
 * MIT license
-  ([LICENSE-MIT](LICENSE-MIT) or <http://opensource.org/licenses/MIT>)
+  ([LICENSE-MIT](../LICENSE-MIT) or <http://opensource.org/licenses/MIT>)
 
 at your option.
 
@@ -159,7 +159,7 @@ Unless you explicitly state otherwise, any contribution intentionally submitted
 for inclusion in the work by you, as defined in the Apache-2.0 license, shall be
 dual licensed as above, without any additional terms or conditions.
 
-See [CONTRIBUTING.md](./CONTRIBUTING.md) for more information.
+See [CONTRIBUTING.md](../CONTRIBUTING.md) for more information.
 
 See [**Development.md**](./docs/Development.md) for instructions on how to
 perform common development tasks when contributing to this project.

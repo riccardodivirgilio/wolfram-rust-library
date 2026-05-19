@@ -12,8 +12,8 @@ By contributing to Wolfram, you agree and affirm that:
 
 > You have read and agreed to the [Developer Certificate of Origin](http://developercertificate.org/), version 1.1 or later.
 
-Please see [LICENSE](LICENSE) for licensing conditions pertaining
-to individual repositories.
+Please see [LICENSE-APACHE](LICENSE-APACHE) and [LICENSE-MIT](LICENSE-MIT)
+for licensing conditions.
 
 
 ## Bug reports
