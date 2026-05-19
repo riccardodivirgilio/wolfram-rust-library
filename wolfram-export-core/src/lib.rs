@@ -92,7 +92,7 @@ pub extern "C" fn __wolfram_manifest__(out_len: *mut usize) -> *const u8 {
     ptr
 }
 
-/// C-ABI symbol returning a null-terminated JSON description of every exported
+/// C-ABI symbol returning a null-terminated manifest description of every exported
 /// function. Consumed by `cargo wolfram build` via `libloading` — no WL kernel needed.
 ///
 /// JSON shape: `[{"name":"add","kind":"Native","params":["Real","Real"],"ret":"Real"}, ...]`
@@ -102,7 +102,7 @@ pub extern "C" fn __wolfram_manifest__(out_len: *mut usize) -> *const u8 {
 /// The returned pointer is a `'static` C string (leaked once, never freed).
 #[cfg(feature = "automate-function-loading-boilerplate")]
 #[no_mangle]
-pub extern "C" fn __wolfram_manifest_json__() -> *const std::os::raw::c_char {
+pub extern "C" fn __wolfram_manifest_data__() -> *const std::os::raw::c_char {
     fn json_str(s: &str) -> String {
         let escaped = s.replace('\\', "\\\\").replace('"', "\\\"");
         format!("\"{}\"", escaped)

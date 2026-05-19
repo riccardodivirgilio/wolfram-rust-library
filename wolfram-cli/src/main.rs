@@ -396,13 +396,13 @@ fn load_manifest(dylib: &Path) -> Result<Vec<FunctionEntry>> {
         .with_context(|| format!("failed to dlopen {}", dylib.display()))?;
 
     let manifest_fn: libloading::Symbol<ManifestFn> =
-        unsafe { lib.get(b"__wolfram_manifest_json__\0") }.context(
-            "dylib does not export __wolfram_manifest_json__ \
+        unsafe { lib.get(b"__wolfram_manifest_data__\0") }.context(
+            "dylib does not export __wolfram_manifest_data__ \
              — was it built with a wolfram-export-* crate?",
         )?;
 
     let ptr = unsafe { manifest_fn() };
-    anyhow::ensure!(!ptr.is_null(), "__wolfram_manifest_json__ returned null");
+    anyhow::ensure!(!ptr.is_null(), "__wolfram_manifest_data__ returned null");
 
     let json = unsafe { CStr::from_ptr(ptr) }
         .to_str()
