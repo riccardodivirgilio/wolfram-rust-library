@@ -21,4 +21,4 @@ wolfram-expr = { version = "0.2", path = "../wolfram-expr" }
 [build-dependencies]
 env_logger = "0.10.0"
 
-wolfram-app-discovery = "0.4.7"
+wolfram-app-discovery = { version = "0.4.7", path = "../wolfram-app-discovery" }
