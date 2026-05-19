@@ -1,11 +1,15 @@
 use anyhow::{Context, Result};
+use cargo_metadata::Message;
 use clap::{Parser, Subcommand};
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
+use std::collections::HashSet;
 use std::ffi::CStr;
-use std::io::{BufRead, BufReader};
+use std::io::BufReader;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
+use std::str::FromStr;
+use wolfram_app_discovery::SystemID;
 
 // ── CLI structure ────────────────────────────────────────────────────────────
 
@@ -60,6 +64,92 @@ struct FunctionEntry {
     ret: String,
 }
 
+struct ParsedBuildArgs {
+    cargo_args: Vec<String>,
+    system_ids: Vec<SupportedSystemId>,
+    out: Option<PathBuf>,
+    cleanup: bool,
+}
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+enum SupportedSystemId {
+    MacOsX86_64,
+    MacOsArm64,
+    WindowsX86_64,
+    LinuxX86_64,
+    LinuxArm64,
+    LinuxArm,
+}
+
+impl SupportedSystemId {
+    fn current() -> Result<Self> {
+        Self::try_from(SystemID::current_rust_target())
+    }
+
+    fn as_str(self) -> &'static str {
+        match self {
+            SupportedSystemId::MacOsX86_64 => "MacOSX-x86-64",
+            SupportedSystemId::MacOsArm64 => "MacOSX-ARM64",
+            SupportedSystemId::WindowsX86_64 => "Windows-x86-64",
+            SupportedSystemId::LinuxX86_64 => "Linux-x86-64",
+            SupportedSystemId::LinuxArm64 => "Linux-ARM64",
+            SupportedSystemId::LinuxArm => "Linux-ARM",
+        }
+    }
+
+    fn rust_target(self) -> &'static str {
+        match self {
+            SupportedSystemId::MacOsX86_64 => "x86_64-apple-darwin",
+            SupportedSystemId::MacOsArm64 => "aarch64-apple-darwin",
+            // Prefer the GNU Windows target for cross builds; MSVC cross-linking
+            // is host/toolchain dependent and can be added as an explicit override.
+            SupportedSystemId::WindowsX86_64 => "x86_64-pc-windows-gnu",
+            SupportedSystemId::LinuxX86_64 => "x86_64-unknown-linux-gnu",
+            SupportedSystemId::LinuxArm64 => "aarch64-unknown-linux-gnu",
+            SupportedSystemId::LinuxArm => "armv7-unknown-linux-gnueabihf",
+        }
+    }
+}
+
+impl FromStr for SupportedSystemId {
+    type Err = anyhow::Error;
+
+    fn from_str(value: &str) -> Result<Self> {
+        match value {
+            "MacOSX-x86-64" => Ok(SupportedSystemId::MacOsX86_64),
+            "MacOSX-ARM64" => Ok(SupportedSystemId::MacOsArm64),
+            "Windows-x86-64" => Ok(SupportedSystemId::WindowsX86_64),
+            "Linux-x86-64" => Ok(SupportedSystemId::LinuxX86_64),
+            "Linux-ARM64" => Ok(SupportedSystemId::LinuxArm64),
+            "Linux-ARM" => Ok(SupportedSystemId::LinuxArm),
+            other => anyhow::bail!(
+                "unsupported Wolfram SystemID {other:?}; supported values are: \
+                 MacOSX-x86-64, MacOSX-ARM64, Windows-x86-64, \
+                 Linux-x86-64, Linux-ARM64, Linux-ARM"
+            ),
+        }
+    }
+}
+
+impl TryFrom<SystemID> for SupportedSystemId {
+    type Error = anyhow::Error;
+
+    fn try_from(system_id: SystemID) -> Result<Self> {
+        match system_id {
+            SystemID::MacOSX_x86_64 => Ok(SupportedSystemId::MacOsX86_64),
+            SystemID::MacOSX_ARM64 => Ok(SupportedSystemId::MacOsArm64),
+            SystemID::Windows_x86_64 => Ok(SupportedSystemId::WindowsX86_64),
+            SystemID::Linux_x86_64 => Ok(SupportedSystemId::LinuxX86_64),
+            SystemID::Linux_ARM64 => Ok(SupportedSystemId::LinuxArm64),
+            SystemID::Linux_ARM => Ok(SupportedSystemId::LinuxArm),
+            other => anyhow::bail!(
+                "current Wolfram SystemID {} is not supported by cargo wolfram build",
+                other.as_str()
+            ),
+        }
+    }
+}
+
 // ── Entry point ──────────────────────────────────────────────────────────────
 
 fn main() -> Result<()> {
@@ -72,38 +162,111 @@ fn main() -> Result<()> {
 // ── build ────────────────────────────────────────────────────────────────────
 
 fn cmd_build(args: BuildArgs) -> Result<()> {
-    let mut cargo = Command::new("cargo");
+    let parsed = parse_forwarded_args(args.cargo_args)?;
+    let out_dir = parsed.out.as_deref().or(args.out.as_deref());
+    let cleanup = args.cleanup || parsed.cleanup;
+    let host_system_id = SupportedSystemId::current()?;
+    let system_ids = target_system_ids(host_system_id, parsed.system_ids);
+
+    let host_dylibs = run_cargo_build(&parsed.cargo_args, None)?;
+
+    if host_dylibs.is_empty() {
+        eprintln!("cargo wolfram: no cdylib artifacts found — nothing to generate");
+        return Ok(());
+    }
+
+    let mut artifacts_by_system_id = Vec::new();
+    artifacts_by_system_id.push((host_system_id, host_dylibs.clone()));
+
+    for system_id in system_ids.iter().copied() {
+        if system_id == host_system_id {
+            continue;
+        }
+
+        let dylibs = run_cargo_build(&parsed.cargo_args, Some(system_id.rust_target()))?;
+        artifacts_by_system_id.push((system_id, dylibs));
+    }
+
+    let mut cleaned_folders = HashSet::new();
+    for host_dylib in &host_dylibs {
+        let entries = load_manifest(host_dylib)?;
+        let package_folder = package_folder(host_dylib, out_dir);
+
+        if cleanup
+            && cleaned_folders.insert(package_folder.clone())
+            && package_folder.exists()
+        {
+            std::fs::remove_dir_all(&package_folder).with_context(|| {
+                format!("failed to clear {}", package_folder.display())
+            })?;
+        }
+        std::fs::create_dir_all(&package_folder)
+            .with_context(|| format!("failed to create {}", package_folder.display()))?;
+
+        let library_folder_name = library_folder_name(host_dylib)?;
+        let host_key = artifact_key(host_dylib);
+        for (system_id, dylibs) in &artifacts_by_system_id {
+            let Some(dylib) = dylibs.iter().find(|dylib| artifact_key(dylib) == host_key)
+            else {
+                anyhow::bail!(
+                    "target build for {} did not produce an artifact matching {}",
+                    system_id.as_str(),
+                    host_dylib.display()
+                );
+            };
+            let library_folder = package_folder
+                .join(system_id.as_str())
+                .join(&library_folder_name);
+            generate_loader(dylib, &entries, &library_folder)?;
+        }
+    }
+
+    Ok(())
+}
+
+fn run_cargo_build(
+    cargo_args: &[String],
+    rust_target: Option<&str>,
+) -> Result<Vec<PathBuf>> {
+    let cargo_bin = std::env::var("CARGO").unwrap_or_else(|_| "cargo".to_string());
+    let mut cargo = Command::new(cargo_bin);
     cargo
         .arg("build")
         .arg("--message-format=json-render-diagnostics")
-        .args(&args.cargo_args)
         .stdout(Stdio::piped());
+
+    if let Some(rust_target) = rust_target {
+        cargo.arg("--target").arg(rust_target);
+    }
+
+    cargo.args(cargo_args);
 
     let mut child = cargo.spawn().context("failed to spawn cargo build")?;
     let stdout = child.stdout.take().unwrap();
 
     let mut dylibs: Vec<PathBuf> = Vec::new();
 
-    for line in BufReader::new(stdout).lines() {
-        let line = line?;
-        let Ok(msg) = serde_json::from_str::<serde_json::Value>(&line) else {
+    for message in Message::parse_stream(BufReader::new(stdout)) {
+        let Message::CompilerArtifact(artifact) =
+            message.context("failed to parse cargo build JSON message")?
+        else {
             continue;
         };
-        if msg["reason"] == "compiler-artifact" {
-            let is_cdylib = msg["target"]["crate_types"]
-                .as_array()
-                .map(|k| k.iter().any(|v| v == "cdylib"))
-                .unwrap_or(false);
-            if is_cdylib {
-                for f in msg["filenames"].as_array().unwrap_or(&vec![]) {
-                    if let Some(s) = f.as_str() {
-                        let p = Path::new(s);
-                        let ext = p.extension().and_then(|e| e.to_str()).unwrap_or("");
-                        if matches!(ext, "dylib" | "so" | "dll") {
-                            dylibs.push(p.to_owned());
-                        }
-                    }
-                }
+
+        let is_cdylib = artifact
+            .target
+            .crate_types
+            .iter()
+            .any(|crate_type| crate_type.to_string() == "cdylib");
+        if !is_cdylib {
+            continue;
+        }
+
+        for filename in artifact.filenames {
+            let path = filename.as_std_path();
+            let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
+            if matches!(ext, "dylib" | "so" | "dll") {
+                dylibs.push(path.to_owned());
             }
         }
     }
@@ -113,42 +276,102 @@ fn cmd_build(args: BuildArgs) -> Result<()> {
         std::process::exit(status.code().unwrap_or(1));
     }
 
-    if dylibs.is_empty() {
-        eprintln!("cargo wolfram: no cdylib artifacts found — nothing to generate");
-        return Ok(());
-    }
-
-    for dylib in &dylibs {
-        generate_loader(dylib, args.out.as_deref(), args.cleanup)?;
-    }
-
-    Ok(())
+    Ok(dylibs)
 }
 
 // ── loader generation ────────────────────────────────────────────────────────
 
-fn generate_loader(dylib: &Path, out_dir: Option<&Path>, cleanup: bool) -> Result<()> {
+fn parse_forwarded_args(args: Vec<String>) -> Result<ParsedBuildArgs> {
+    let mut cargo_args = Vec::new();
+    let mut system_ids = Vec::new();
+    let mut out = None;
+    let mut cleanup = false;
+    let mut iter = args.into_iter();
+
+    while let Some(arg) = iter.next() {
+        if arg == "--system-id" {
+            let value = iter
+                .next()
+                .context("--system-id requires a Wolfram SystemID value")?;
+            system_ids.push(value.parse()?);
+        } else if let Some(value) = arg.strip_prefix("--system-id=") {
+            system_ids.push(value.parse()?);
+        } else if arg == "--out" {
+            let value = iter.next().context("--out requires a destination folder")?;
+            out = Some(PathBuf::from(value));
+        } else if let Some(value) = arg.strip_prefix("--out=") {
+            out = Some(PathBuf::from(value));
+        } else if arg == "--cleanup" {
+            cleanup = true;
+        } else if arg == "--target" || arg.starts_with("--target=") {
+            anyhow::bail!(
+                "use --system-id <SystemID> instead of forwarding Cargo --target"
+            );
+        } else {
+            cargo_args.push(arg);
+        }
+    }
+
+    Ok(ParsedBuildArgs {
+        cargo_args,
+        system_ids,
+        out,
+        cleanup,
+    })
+}
+
+fn target_system_ids(
+    host_system_id: SupportedSystemId,
+    requested: Vec<SupportedSystemId>,
+) -> Vec<SupportedSystemId> {
+    let mut system_ids = vec![host_system_id];
+    for system_id in requested {
+        if !system_ids.contains(&system_id) {
+            system_ids.push(system_id);
+        }
+    }
+    system_ids
+}
+
+fn package_folder(host_dylib: &Path, out_dir: Option<&Path>) -> PathBuf {
+    if let Some(dir) = out_dir {
+        return dir.to_owned();
+    }
+
+    let stem = host_dylib.file_stem().unwrap();
+    host_dylib.parent().unwrap_or(Path::new(".")).join(stem)
+}
+
+fn library_folder_name(host_dylib: &Path) -> Result<String> {
+    Ok(host_dylib
+        .file_stem()
+        .and_then(|stem| stem.to_str())
+        .context("dylib file name is not valid UTF-8")?
+        .to_owned())
+}
+
+fn artifact_key(dylib: &Path) -> String {
+    dylib
+        .file_stem()
+        .and_then(|stem| stem.to_str())
+        .unwrap_or_default()
+        .trim_start_matches("lib")
+        .to_owned()
+}
+
+fn generate_loader(dylib: &Path, entries: &[FunctionEntry], folder: &Path) -> Result<()> {
     // Compute SHA256 of the dylib bytes.
     let dylib_bytes = std::fs::read(dylib)
         .with_context(|| format!("failed to read {}", dylib.display()))?;
     let hash = format!("{:x}", Sha256::digest(&dylib_bytes));
 
-    let ext = dylib.extension().and_then(|e| e.to_str()).unwrap_or("dylib");
+    let ext = dylib
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("dylib");
     let hashed_name = format!("{}.{}", hash, ext);
 
-    // --out is the exact destination folder; default is <dylib_dir>/<stem>/.
-    let folder: PathBuf = if let Some(dir) = out_dir {
-        dir.to_owned()
-    } else {
-        let stem = dylib.file_stem().unwrap();
-        dylib.parent().unwrap_or(Path::new(".")).join(stem)
-    };
-
-    if cleanup && folder.exists() {
-        std::fs::remove_dir_all(&folder)
-            .with_context(|| format!("failed to clear {}", folder.display()))?;
-    }
-    std::fs::create_dir_all(&folder)
+    std::fs::create_dir_all(folder)
         .with_context(|| format!("failed to create {}", folder.display()))?;
 
     // Copy dylib under its content hash.
@@ -156,14 +379,13 @@ fn generate_loader(dylib: &Path, out_dir: Option<&Path>, cleanup: bool) -> Resul
     std::fs::copy(dylib, &hashed_dylib)
         .with_context(|| format!("failed to copy dylib to {}", hashed_dylib.display()))?;
 
-    // Generate manifest.wl next to the hashed dylib.
-    let entries = load_manifest(dylib)?;
+    // Generate manifest.wl next to the hashed dylib in the SystemID/library folder.
     let wl = render_wl(&hashed_name, &entries);
     let manifest_path = folder.join("manifest.wl");
     std::fs::write(&manifest_path, &wl)
         .with_context(|| format!("failed to write {}", manifest_path.display()))?;
 
-    eprintln!("cargo wolfram: generated {}", manifest_path.display());
+    println!("{}", manifest_path.display());
     Ok(())
 }
 

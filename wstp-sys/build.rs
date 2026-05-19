@@ -35,23 +35,6 @@ fn main() {
         return;
     }
 
-    //
-    // Error if this is a cross compilation
-    //
-
-    let host = std::env::var("HOST").expect("expected 'HOST' env var to be set");
-    let target = std::env::var("TARGET").expect("expected 'TARGET' env var to be set");
-
-    // Note: `host == target` is required for the use of `cfg!(..)` in this
-    //       script to be valid.
-    if host != target {
-        panic!(
-            "error: crate wstp-sys does not support cross compilation. (host: {}, target: {})",
-            host,
-            target
-        );
-    }
-
     let app: Option<WolframApp> = WolframApp::try_default().ok();
 
     let target_system_id: SystemID =
@@ -62,7 +45,7 @@ fn main() {
     // Link to WSTP
     //-------------
 
-    link_to_wstp(app.as_ref());
+    link_to_wstp(app.as_ref(), target_system_id);
 
     //----------------------------------------------------
     // Generate or use pre-generated Rust bindings to WSTP
@@ -163,13 +146,11 @@ fn make_bindings_path(wolfram_version: &WolframVersion, system_id: SystemID) -> 
 /// Emits the necessary `cargo` instructions to link to the WSTP static library,
 /// and also links the WSTP interface libraries (the libraries that WSTP itself
 /// depends on).
-fn link_to_wstp(app: Option<&WolframApp>) {
+fn link_to_wstp(app: Option<&WolframApp>, target_system_id: SystemID) {
     // Path to the WSTP static library file.
-    let static_lib = wolfram_app_discovery::build_scripts::wstp_static_library_path(app)
-        .expect("unable to get WSTP static library path")
-        .into_path_buf();
+    let static_lib = target_wstp_static_library_path(app, target_system_id);
 
-    link_wstp_statically(&static_lib);
+    link_wstp_statically(&static_lib, target_system_id);
 
     //
     // Link to the C++ standard library, required by WSTP
@@ -202,7 +183,10 @@ fn link_to_wstp(app: Option<&WolframApp>) {
 
     // TODO: Look at the complete list of CMake libraries required by WSTP and update this
     //       logic for Windows and Linux.
-    if cfg!(target_os = "macos") {
+    if matches!(
+        target_system_id,
+        SystemID::MacOSX_x86_64 | SystemID::MacOSX_ARM64
+    ) {
         println!("cargo:rustc-link-lib=framework=Foundation");
     }
 
@@ -210,7 +194,10 @@ fn link_to_wstp(app: Option<&WolframApp>) {
     // Windows
     //
 
-    if cfg!(target_os = "windows") {
+    if matches!(
+        target_system_id,
+        SystemID::Windows_x86_64 | SystemID::Windows
+    ) {
         println!("cargo:rustc-link-lib=dylib=kernel32");
         println!("cargo:rustc-link-lib=dylib=user32");
         println!("cargo:rustc-link-lib=dylib=advapi32");
@@ -224,17 +211,45 @@ fn link_to_wstp(app: Option<&WolframApp>) {
     // Linux
     //
 
-    if cfg!(target_os = "linux") {
+    if matches!(
+        target_system_id,
+        SystemID::Linux_x86_64
+            | SystemID::Linux_ARM64
+            | SystemID::Linux_ARM
+            | SystemID::Linux
+    ) {
         println!("cargo:rustc-link-lib=uuid")
     }
 }
 
-fn link_wstp_statically(lib: &PathBuf) {
+fn target_wstp_static_library_path(
+    app: Option<&WolframApp>,
+    target_system_id: SystemID,
+) -> PathBuf {
+    if let Some(app) = app {
+        let sdk = app
+            .wstp_sdks()
+            .expect("unable to locate WSTP SDKs")
+            .into_iter()
+            .flat_map(|sdk| sdk.ok())
+            .find(|sdk| sdk.system_id() == target_system_id)
+            .unwrap_or_else(|| {
+                panic!("unable to locate WSTP SDK for target SystemID {target_system_id}")
+            });
+        return sdk.wstp_static_library_path();
+    }
+
+    wolfram_app_discovery::build_scripts::wstp_static_library_path(None)
+        .expect("unable to get WSTP static library path")
+        .into_path_buf()
+}
+
+fn link_wstp_statically(lib: &PathBuf, target_system_id: SystemID) {
     let mut lib = lib.clone();
 
-    if cfg!(all(target_os = "macos", target_arch = "x86_64")) {
+    if target_system_id == SystemID::MacOSX_x86_64 {
         lib = lipo_native_library(&lib, "x86_64");
-    } else if cfg!(all(target_os = "macos", target_arch = "aarch64")) {
+    } else if target_system_id == SystemID::MacOSX_ARM64 {
         lib = lipo_native_library(&lib, "arm64");
     }
 

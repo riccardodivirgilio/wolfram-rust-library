@@ -618,7 +618,7 @@ impl<T> NumericArray<T> {
             rtl::MNumericArray_convertType(
                 &mut new_raw,
                 self_raw,
-                T2::TYPE.as_raw(),
+                T2::TYPE.as_raw() as sys::numericarray_data_t,
                 method.as_raw(),
                 tolerance,
             )
@@ -679,7 +679,7 @@ impl<T: NumericArrayType> UninitNumericArray<T> {
             let mut numeric_array: sys::MNumericArray = std::ptr::null_mut();
 
             let err_code: sys::errcode_t = rtl::MNumericArray_new(
-                <T as NumericArrayType>::TYPE.as_raw(),
+                <T as NumericArrayType>::TYPE.as_raw() as sys::numericarray_data_t,
                 i64::try_from(rank).expect("usize overflows i64"),
                 dimensions.as_ptr() as *mut sys::mint,
                 &mut numeric_array,
