@@ -79,7 +79,6 @@ pub fn from_app_directory(dir: &PathBuf) -> Result<WolframApp, Error> {
 // Implementation
 //======================================
 
-
 #[derive(Debug, Default)]
 struct WolframAppBuilder {
     app_name: Option<String>,
@@ -713,7 +712,6 @@ unsafe fn get_user_packages(product: &str) -> Vec<WolframApp> {
 
     apps
 }
-
 
 unsafe fn load_apps_from_registry() -> Vec<WolframApp> {
     let mut installations: Vec<WolframApp> = Vec::new();

@@ -169,17 +169,17 @@ fn expand_struct(
             // same numeric primitive type — e.g. all `f64` or all `i16`).
             // Accepts NumericArray, PackedArray, or ByteArray on the wire and
             // distributes the (widened) elements across the fields in order.
-            let common_numeric_ty: Option<&syn::Type> = fields.first().and_then(|first| {
-                let first_name = numeric_primitive_name(&first.ty)?;
-                if fields
-                    .iter()
-                    .all(|f| numeric_primitive_name(&f.ty).as_deref() == Some(&first_name))
-                {
-                    Some(&first.ty)
-                } else {
-                    None
-                }
-            });
+            let common_numeric_ty: Option<&syn::Type> =
+                fields.first().and_then(|first| {
+                    let first_name = numeric_primitive_name(&first.ty)?;
+                    if fields.iter().all(|f| {
+                        numeric_primitive_name(&f.ty).as_deref() == Some(&first_name)
+                    }) {
+                        Some(&first.ty)
+                    } else {
+                        None
+                    }
+                });
             let numeric_branch = if let Some(t) = common_numeric_ty {
                 let assigns = field_idents.iter().enumerate().map(|(i, id)| {
                     quote! { let #id: #t = __slice[#i]; }

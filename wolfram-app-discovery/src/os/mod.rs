@@ -7,7 +7,6 @@ pub mod windows;
 #[cfg(target_os = "linux")]
 pub mod linux;
 
-
 use std::path::PathBuf;
 
 use crate::{Error, WolframApp};

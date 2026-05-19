@@ -1028,8 +1028,9 @@ mod wstp_impls {
         let mut elements: Vec<Expr> = Vec::new();
 
         for _ in 0..arg_count {
-            let elem = link
-                .get_expr_with_resolver(&mut |name| Symbol::try_new(&format!("System`{name}")))?;
+            let elem = link.get_expr_with_resolver(&mut |name| {
+                Symbol::try_new(&format!("System`{name}"))
+            })?;
             elements.push(elem);
         }
 

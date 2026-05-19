@@ -1,6 +1,5 @@
 mod output;
 
-
 use std::path::PathBuf;
 
 use clap::Parser;
@@ -216,7 +215,6 @@ fn list(discovery: DiscoveryOpts, output: OutputOpts) -> Result<(), wad::Error> 
             }
         },
     }
-
 
     Ok(())
 }

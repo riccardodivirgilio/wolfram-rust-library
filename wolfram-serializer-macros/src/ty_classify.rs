@@ -230,8 +230,9 @@ fn vec_inner(ty: &Type) -> Option<&Type> {
 pub(crate) fn numeric_primitive_name(ty: &Type) -> Option<String> {
     let prim = primitive_ident_of(ty)?;
     match prim.as_str() {
-        "i8" | "i16" | "i32" | "i64" | "u8" | "u16" | "u32" | "u64" | "f32"
-        | "f64" => Some(prim),
+        "i8" | "i16" | "i32" | "i64" | "u8" | "u16" | "u32" | "u64" | "f32" | "f64" => {
+            Some(prim)
+        },
         _ => None,
     }
 }

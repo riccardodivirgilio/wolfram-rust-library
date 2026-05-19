@@ -51,7 +51,8 @@ fn probe(link: &mut Link) {
     match link.test_head("NumericArray") {
         Ok(argc) => {
             eprintln!("  it's NumericArray with {argc} args — trying get_f64_array on inner List");
-            let arr_result = link.get_f64_array()
+            let arr_result = link
+                .get_f64_array()
                 .map(|a| (a.data().to_vec(), a.dimensions().to_vec()));
             match arr_result {
                 Ok((data, dims)) => {
@@ -59,19 +60,20 @@ fn probe(link: &mut Link) {
                         data.len(), data.first());
                     // consume remaining args (type string "Real64", etc.)
                     for _ in 1..argc {
-                        link.get_expr_with_resolver(
-                            &mut |name| Symbol::try_new(&format!("System`{name}"))
-                        ).unwrap();
+                        link.get_expr_with_resolver(&mut |name| {
+                            Symbol::try_new(&format!("System`{name}"))
+                        })
+                        .unwrap();
                     }
-                }
+                },
                 Err(e) => {
                     eprintln!("  get_f64_array on inner List FAIL: {e}");
-                }
+                },
             }
-        }
+        },
         Err(e) => {
             eprintln!("  not a NumericArray: {e}");
-        }
+        },
     }
 
     link.put_symbol("System`Null").unwrap();
@@ -79,8 +81,14 @@ fn probe(link: &mut Link) {
 
 // Reads NumericArray[List[...], "Real64"] off the link using binary transfer.
 fn get_f64_numeric_array(link: &mut Link) -> Vec<f64> {
-    let _argc = link.test_head("NumericArray").expect("expected NumericArray");
-    let data = link.get_f64_array().expect("expected Real64 array data").data().to_vec();
+    let _argc = link
+        .test_head("NumericArray")
+        .expect("expected NumericArray");
+    let data = link
+        .get_f64_array()
+        .expect("expected Real64 array data")
+        .data()
+        .to_vec();
     // consume the type string "Real64"
     link.get_string_ref().expect("expected type string");
     data

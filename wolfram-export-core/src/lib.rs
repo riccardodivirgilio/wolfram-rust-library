@@ -119,7 +119,8 @@ pub extern "C" fn __wolfram_manifest_json__() -> *const std::os::raw::c_char {
 
         match entry {
             ExportEntry::Native { name, signature } => {
-                let (params, ret) = signature().unwrap_or_else(|_| (vec![], Expr::string("")));
+                let (params, ret) =
+                    signature().unwrap_or_else(|_| (vec![], Expr::string("")));
                 let params_json: Vec<String> =
                     params.iter().map(|e| json_str(&e.to_string())).collect();
                 entries.push_str(&format!(
@@ -130,23 +131,20 @@ pub extern "C" fn __wolfram_manifest_json__() -> *const std::os::raw::c_char {
                 ));
             },
             ExportEntry::Wstp { name } => {
-                entries.push_str(&format!(
-                    r#"{{"name":{},"kind":"Wstp"}}"#,
-                    json_str(name)
-                ));
+                entries
+                    .push_str(&format!(r#"{{"name":{},"kind":"Wstp"}}"#, json_str(name)));
             },
             ExportEntry::Wxf { name, .. } => {
-                entries.push_str(&format!(
-                    r#"{{"name":{},"kind":"Wxf"}}"#,
-                    json_str(name)
-                ));
+                entries
+                    .push_str(&format!(r#"{{"name":{},"kind":"Wxf"}}"#, json_str(name)));
             },
         }
     }
 
     entries.push(']');
 
-    let cstring = std::ffi::CString::new(entries).expect("manifest JSON contains null byte");
+    let cstring =
+        std::ffi::CString::new(entries).expect("manifest JSON contains null byte");
     std::ffi::CString::into_raw(cstring)
 }
 

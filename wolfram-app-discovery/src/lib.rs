@@ -49,7 +49,6 @@
 
 #![warn(missing_docs)]
 
-
 pub mod build_scripts;
 pub mod config;
 
@@ -63,7 +62,6 @@ mod test_readme {
     // Ensure that doc tests in the README.md file get run.
     #![doc = include_str!("../README.md")]
 }
-
 
 use std::{
     cmp::Ordering,
@@ -865,7 +863,6 @@ impl WstpSdk {
                 dir.display()
             )));
         };
-
 
         let compiler_additions = dir.join("CompilerAdditions");
 
@@ -1793,7 +1790,6 @@ impl Display for FilterError {
         }
     }
 }
-
 
 impl Display for WolframVersion {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {

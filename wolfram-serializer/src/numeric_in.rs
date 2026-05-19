@@ -16,9 +16,9 @@ use crate::wxf::constants::{
     array_type_from_wxf, token_kind_name, TOKEN_BINARY_STRING, TOKEN_NUMERIC_ARRAY,
     TOKEN_PACKED_ARRAY,
 };
-use wolfram_expr::PackedArrayDataType;
 use crate::wxf::cursor::WxfCursor;
 use crate::Error;
+use wolfram_expr::PackedArrayDataType;
 
 /// Sealed trait implemented for each numeric primitive that the WXF derive /
 /// hand-impl path can read into. Each impl knows its target [`DT`] and how to
@@ -188,7 +188,11 @@ unsafe fn identity_cast<T: Copy>(bytes: &[u8]) -> Vec<T> {
     let elem_size = std::mem::size_of::<T>();
     let n = bytes.len() / elem_size;
     let mut out: Vec<T> = Vec::with_capacity(n);
-    std::ptr::copy_nonoverlapping(bytes.as_ptr(), out.as_mut_ptr() as *mut u8, bytes.len());
+    std::ptr::copy_nonoverlapping(
+        bytes.as_ptr(),
+        out.as_mut_ptr() as *mut u8,
+        bytes.len(),
+    );
     out.set_len(n);
     out
 }

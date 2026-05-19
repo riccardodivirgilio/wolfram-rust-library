@@ -13,7 +13,9 @@
 
 use wolfram_expr::Expr;
 use wolfram_library_link::NumericArray;
-use wolfram_serializer::{deserialize, serialize, Format, FromWolfram, ToWolfram, WxfCursor};
+use wolfram_serializer::{
+    deserialize, serialize, Format, FromWolfram, ToWolfram, WxfCursor,
+};
 
 /// (arg types, return type) signature for every `#[export(wxf)]` function:
 /// one ByteArray in, one ByteArray out. The WL side wraps all of the user
