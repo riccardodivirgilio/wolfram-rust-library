@@ -382,7 +382,8 @@ fn render_wl(dylib_name: &str, entries: &[FunctionEntry]) -> String {
             },
             "Wstp" => {
                 out.push_str(&format!(
-                    "    \"{}\" -> LibraryFunctionLoad[$lib, \"{}\", LinkObject, LinkObject]{}\n",
+                    "    \"{}\" -> With[{{$f = LibraryFunctionLoad[$lib, \"{}\", LinkObject, LinkObject]}}, \
+                     Function[Block[{{$Context = \"RustLinkWSTPPrivateContext`\", $ContextPath = {{}}}}, $f[##1]]]]{}\n",
                     e.name, e.name, sep
                 ));
             },

@@ -955,7 +955,6 @@ fn bool_from_mbool(boole: sys::mbool) -> bool {
 #[macro_export]
 macro_rules! generate_loader {
     ($name:ident) => {
-        // TODO: Use this anonymous `const` trick in #[export(..)] too.
         const _: () = {
             #[no_mangle]
             pub unsafe extern "C" fn $name(

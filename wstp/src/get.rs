@@ -431,6 +431,21 @@ impl Link {
     // Numerics
     //==================================
 
+    /// Read any number token (integer or real, arbitrary precision) as its
+    /// decimal string representation. Used to recover `BigInteger` / `BigReal`
+    /// values whose precision exceeds `i64` / `f64`.
+    ///
+    /// *WSTP C API Documentation:* [`WSGetNumberAsString()`](https://reference.wolfram.com/language/ref/c/WSGetNumberAsString.html)
+    pub fn get_number_as_string(&mut self) -> Result<String, Error> {
+        let mut c_string: *const c_char = std::ptr::null();
+        if unsafe { sys::WSGetNumberAsString(self.raw_link, &mut c_string) } == 0 {
+            return Err(self.error_or_unknown());
+        }
+        let owned = unsafe { CStr::from_ptr(c_string).to_string_lossy().into_owned() };
+        unsafe { sys::WSReleaseString(self.raw_link, c_string) };
+        Ok(owned)
+    }
+
     /// *WSTP C API Documentation:* [`WSGetInteger64()`](https://reference.wolfram.com/language/ref/c/WSGetInteger64.html)
     pub fn get_i64(&mut self) -> Result<i64, Error> {
         let mut int = 0;
