@@ -64,6 +64,10 @@ struct BuildArgs {
     #[arg(long)]
     cleanup: bool,
 
+    /// Copy the dylib using its original name instead of a content hash
+    #[arg(long)]
+    named_exports: bool,
+
     /// Extra arguments forwarded verbatim to `cargo build`
     #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
     cargo_args: Vec<String>,
@@ -92,6 +96,14 @@ struct FunctionEntry {
     params: Vec<String>,
     #[serde(default)]
     ret: String,
+}
+
+struct DylibInfo {
+    src: PathBuf,
+    filename: String,       // "libaborts"  (full stem, no extension)
+    name: String,           // "aborts"     (no "lib" prefix)
+    hash: String,           // sha256 hex of the source dylib
+    entries: Vec<FunctionEntry>, // empty when dylib has no __wolfram_manifest_data__
 }
 
 struct ParsedBuildArgs {
@@ -130,7 +142,7 @@ fn main() -> Result<()> {
 
 fn cmd_build(args: BuildArgs) -> Result<()> {
     let parsed = parse_forwarded_args(args.cargo_args)?;
-    let out_dir = parsed.out.as_deref().or(args.out.as_deref());
+    let named_exports = args.named_exports;
     let cleanup = args.cleanup || parsed.cleanup;
     let host_system_id = SystemID::try_current_rust_target()
         .map_err(|e| anyhow::anyhow!("unsupported host platform: {e}"))?;
@@ -138,57 +150,44 @@ fn cmd_build(args: BuildArgs) -> Result<()> {
     let system_ids = target_system_ids(host_system_id, parsed.system_ids);
 
     let host_dylibs = run_cargo_build(&parsed.cargo_args, None)?;
-
     if host_dylibs.is_empty() {
         eprintln!("cargo wl: no cdylib artifacts found — nothing to generate");
         return Ok(());
     }
 
-    let mut artifacts_by_system_id = Vec::new();
-    artifacts_by_system_id.push((host_system_id, host_dylibs.clone()));
+    let out_dir = parsed.out.as_deref().or(args.out.as_deref())
+        .map(Path::to_owned)
+        .unwrap_or_else(|| {
+            host_dylibs.first()
+                .and_then(|p| p.parent())
+                .map(|p| p.join("wl-package"))
+                .unwrap_or_else(|| PathBuf::from("wl-package"))
+        });
 
+    if cleanup && out_dir.exists() {
+        std::fs::remove_dir_all(&out_dir)
+            .with_context(|| format!("failed to clear {}", out_dir.display()))?;
+    }
+
+    // Collect host dylib infos — manifests are required for cmd_build.
+    let host_infos: Vec<DylibInfo> = host_dylibs.iter()
+        .map(|d| collect_dylib_info(d))
+        .collect::<Result<_>>()?;
+
+    // Generate the merged package for the host system.
+    let lib_dir = generate_package(&host_infos, host_system_id, &out_dir, named_exports)?;
+    println!("{}", lib_dir.join("Functions.wl").display());
+
+    // For each additional cross-compilation target, just copy the dylibs.
     for system_id in system_ids.iter().copied() {
         if system_id == host_system_id {
             continue;
         }
-
-        let dylibs = run_cargo_build(&parsed.cargo_args, Some(rust_target(system_id)?))?;
-        artifacts_by_system_id.push((system_id, dylibs));
+        let cross_dylibs = run_cargo_build(&parsed.cargo_args, Some(rust_target(system_id)?))?;
+        copy_cross_dylibs(&host_infos, &cross_dylibs, system_id, &out_dir, named_exports)?;
     }
 
-    let mut cleaned_folders = HashSet::new();
-    for host_dylib in &host_dylibs {
-        let entries = load_manifest(host_dylib)?;
-        let package_folder = package_folder(host_dylib, out_dir);
-
-        if cleanup
-            && cleaned_folders.insert(package_folder.clone())
-            && package_folder.exists()
-        {
-            std::fs::remove_dir_all(&package_folder).with_context(|| {
-                format!("failed to clear {}", package_folder.display())
-            })?;
-        }
-        std::fs::create_dir_all(&package_folder)
-            .with_context(|| format!("failed to create {}", package_folder.display()))?;
-
-        let library_folder_name = library_folder_name(host_dylib)?;
-        let host_key = artifact_key(host_dylib);
-        for (system_id, dylibs) in &artifacts_by_system_id {
-            let Some(dylib) = dylibs.iter().find(|dylib| artifact_key(dylib) == host_key) else {
-                anyhow::bail!(
-                    "target build for {} did not produce an artifact matching {}",
-                    system_id.as_str(),
-                    host_dylib.display()
-                );
-            };
-            let library_folder = package_folder
-                .join(system_id.as_str())
-                .join(&library_folder_name);
-            generate_loader(dylib, &entries, &library_folder)?;
-        }
-    }
-
+    let _ = lib_dir;
     Ok(())
 }
 
@@ -247,7 +246,228 @@ fn run_cargo_build(
     Ok(dylibs)
 }
 
-// ── loader generation ────────────────────────────────────────────────────────
+// ── package generation ───────────────────────────────────────────────────────
+
+fn collect_dylib_info(dylib: &Path) -> Result<DylibInfo> {
+    let bytes = std::fs::read(dylib)
+        .with_context(|| format!("failed to read {}", dylib.display()))?;
+    let hash = format!("{:x}", Sha256::digest(&bytes));
+    let filename = dylib
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .context("dylib file name is not valid UTF-8")?
+        .to_owned();
+    let name = filename.strip_prefix("lib").unwrap_or(&filename).to_owned();
+    let entries = load_manifest(dylib).unwrap_or_default();
+    Ok(DylibInfo { src: dylib.to_owned(), filename, name, hash, entries })
+}
+
+/// Build the three WL output files and copy all dylibs into `out_dir/SystemID/`.
+/// Returns the lib dir path (`out_dir/SystemID/`) to add to `$LibraryPath`.
+fn generate_package(
+    infos: &[DylibInfo],
+    system_id: SystemID,
+    out_dir: &Path,
+    named_exports: bool,
+) -> Result<PathBuf> {
+    // Everything — dylibs and WL files — goes into the SystemID subfolder.
+    let lib_dir = out_dir.join(system_id.as_str());
+    std::fs::create_dir_all(&lib_dir)?;
+    let out_dir = &lib_dir;
+
+    let ext = infos.first()
+        .and_then(|i| i.src.extension())
+        .and_then(|e| e.to_str())
+        .unwrap_or("dylib");
+
+    // Copy every dylib into the lib dir, recording the dest filename.
+    let placed: Vec<(&DylibInfo, String)> = infos.iter().map(|info| {
+        let dest = if named_exports {
+            format!("{}.{}", info.filename, ext)
+        } else {
+            format!("{}.{}", info.hash, ext)
+        };
+        let _ = std::fs::copy(&info.src, lib_dir.join(&dest));
+        (info, dest)
+    }).collect();
+
+    // ── ArtifactsList.wl ──────────────────────────────────────────────────
+    let items: Vec<String> = placed.iter().map(|(info, dest)| {
+        format!(
+            "  <|\"Name\" -> \"{}\", \"Kind\" -> \"cdylib\", \
+             \"Path\" -> \"{}\", \"Hash\" -> \"{}\"|>",
+            info.name, dest, info.hash
+        )
+    }).collect();
+    std::fs::write(
+        out_dir.join("ArtifactsList.wl"),
+        format!("(* Auto-generated by cargo wl build \u{2014} do not edit *)\n{{\n{}\n}}\n",
+            items.join(",\n")),
+    )?;
+
+    // ── Signatures.wl ────────────────────────────────────────────────────
+    let mut sig_items: Vec<String> = Vec::new();
+    for (info, _) in &placed {
+        for e in &info.entries {
+            sig_items.push(match e.kind.as_str() {
+                "Native" => {
+                    let params = e.params.iter()
+                        .map(|p| p.replace("System`", ""))
+                        .collect::<Vec<_>>().join(", ");
+                    let ret = e.ret.replace("System`", "");
+                    format!(
+                        "  <|\n    \"Library\"  -> \"{}\",\n    \"Function\" -> \"{}\",\n    \
+                         \"Kind\"     -> \"Native\",\n    \"Params\"   -> {{{}}},\n    \
+                         \"Return\"   -> {}\n  |>",
+                        info.name, e.name, params, ret
+                    )
+                },
+                "Wstp" => format!(
+                    "  <|\n    \"Library\"  -> \"{}\",\n    \"Function\" -> \"{}\",\n    \
+                     \"Kind\"     -> \"Wstp\",\n    \"Params\"   -> {{LinkObject, LinkObject}},\n    \
+                     \"Return\"   -> LinkObject\n  |>",
+                    info.name, e.name
+                ),
+                "Wxf" => format!(
+                    "  <|\n    \"Library\"  -> \"{}\",\n    \"Function\" -> \"{}\",\n    \
+                     \"Kind\"     -> \"Wxf\",\n    \"Params\"   -> {{{{ByteArray, \"Constant\"}}}},\n    \
+                     \"Return\"   -> {{ByteArray, Automatic}}\n  |>",
+                    info.name, e.name
+                ),
+                kind => format!(
+                    "  <|\n    \"Library\"  -> \"{}\",\n    \"Function\" -> \"{}\",\n    \
+                     \"Kind\"     -> \"{}\"\n  |>",
+                    info.name, e.name, kind
+                ),
+            });
+        }
+    }
+    std::fs::write(
+        out_dir.join("Signatures.wl"),
+        format!("(* Auto-generated by cargo wl build \u{2014} do not edit *)\n{{\n{}\n}}\n",
+            sig_items.join(",\n")),
+    )?;
+
+    // ── Functions.wl ─────────────────────────────────────────────────────
+    // Collect only the dylibs that have exported functions.
+    let active: Vec<(&DylibInfo, &str)> = placed.iter()
+        .filter(|(info, _)| !info.entries.is_empty())
+        .map(|(info, dest)| (*info, dest.as_str()))
+        .collect();
+
+    // Caller helpers + one lib binding per dylib, all in a single With.
+    let mut bindings: Vec<String> = vec![
+        "  NativeCaller = Identity".to_string(),
+        "  WSTPCaller = Function[With[{f = #1}, \
+         Function[Block[{$Context = \"RustLinkWSTPPrivateContext`\", $ContextPath = {}}, \
+         f[##1]]]]]".to_string(),
+        "  WXFCaller = Function[Composition[BinaryDeserialize, #1, BinarySerialize, List]]".to_string(),
+    ];
+    bindings.extend(active.iter().enumerate().map(|(i, (_, dest))| {
+        format!(
+            "  lib{} = FileNameJoin[{{DirectoryName[$InputFileName], \"{}\"}}]",
+            i + 1, dest
+        )
+    }));
+
+    // All functions in one flat association, each using the appropriate caller.
+    let fn_entries: Vec<String> = active.iter().enumerate().flat_map(|(i, (info, _))| {
+        let lib_var = format!("lib{}", i + 1);
+        info.entries.iter().map(move |e| {
+            match e.kind.as_str() {
+                "Native" => {
+                    let params = e.params.iter()
+                        .map(|p| p.replace("System`", ""))
+                        .collect::<Vec<_>>().join(", ");
+                    let ret = e.ret.replace("System`", "");
+                    format!(
+                        "  \"{}\" -> NativeCaller @ LibraryFunctionLoad[{}, \"{}\", {{{}}}, {}]",
+                        e.name, lib_var, e.name, params, ret
+                    )
+                },
+                "Wstp" => format!(
+                    "  \"{}\" -> WSTPCaller @ LibraryFunctionLoad[{}, \"{}\", LinkObject, LinkObject]",
+                    e.name, lib_var, e.name
+                ),
+                "Wxf" => format!(
+                    "  \"{}\" -> WXFCaller @ LibraryFunctionLoad[{}, \"{}\", \
+                     {{{{ByteArray, \"Constant\"}}}}, {{ByteArray, Automatic}}]",
+                    e.name, lib_var, e.name
+                ),
+                other => format!("  (* unknown kind {}: {} *)", other, e.name),
+            }
+        }).collect::<Vec<_>>()
+    }).collect();
+
+    std::fs::write(
+        out_dir.join("Functions.wl"),
+        format!(
+            "(* Auto-generated by cargo wl build \u{2014} do not edit *)\nWith[{{\n{}\n}},\n<|\n{}\n|>]\n",
+            bindings.join(",\n"),
+            fn_entries.join(",\n")
+        ),
+    )?;
+
+    Ok(lib_dir)
+}
+
+/// Copy cross-compiled dylibs into `out_dir/SystemID/` using names derived from host infos.
+fn copy_cross_dylibs(
+    host_infos: &[DylibInfo],
+    cross_dylibs: &[PathBuf],
+    system_id: SystemID,
+    out_dir: &Path,
+    named_exports: bool,
+) -> Result<()> {
+    // Cross dylibs go directly into out_dir/SystemID/ alongside the host WL files.
+    let lib_dir = out_dir.join(system_id.as_str());
+    std::fs::create_dir_all(&lib_dir)?;
+    for cross in cross_dylibs {
+        let cross_name = cross.file_stem().and_then(|s| s.to_str()).unwrap_or("");
+        let host_info = host_infos.iter()
+            .find(|i| i.filename == cross_name)
+            .with_context(|| format!("no host match for cross dylib {cross_name}"))?;
+        let ext = cross.extension().and_then(|e| e.to_str()).unwrap_or("dylib");
+        let dest = if named_exports {
+            format!("{}.{}", host_info.filename, ext)
+        } else {
+            format!("{}.{}", host_info.hash, ext)
+        };
+        std::fs::copy(cross, lib_dir.join(&dest))
+            .with_context(|| format!("failed to copy {}", cross.display()))?;
+    }
+    Ok(())
+}
+
+fn load_manifest(dylib: &Path) -> Result<Vec<FunctionEntry>> {
+    type ManifestFn = unsafe extern "C" fn() -> *const std::os::raw::c_char;
+
+    let lib = unsafe { libloading::Library::new(dylib) }
+        .with_context(|| format!("failed to dlopen {}", dylib.display()))?;
+
+    let manifest_fn: libloading::Symbol<ManifestFn> =
+        unsafe { lib.get(b"__wolfram_manifest_data__\0") }.context(
+            "dylib does not export __wolfram_manifest_data__",
+        )?;
+
+    let ptr = unsafe { manifest_fn() };
+    anyhow::ensure!(!ptr.is_null(), "__wolfram_manifest_data__ returned null");
+
+    let json = unsafe { CStr::from_ptr(ptr) }
+        .to_str()
+        .context("manifest JSON is not valid UTF-8")?;
+
+    serde_json::from_str(json).context("failed to parse manifest JSON")
+}
+
+fn artifact_key(dylib: &Path) -> String {
+    dylib
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or_default()
+        .trim_start_matches("lib")
+        .to_owned()
+}
 
 fn parse_forwarded_args(args: Vec<String>) -> Result<ParsedBuildArgs> {
     let mut cargo_args = Vec::new();
@@ -309,155 +529,35 @@ fn target_system_ids(
     system_ids
 }
 
-fn package_folder(host_dylib: &Path, out_dir: Option<&Path>) -> PathBuf {
-    if let Some(dir) = out_dir {
-        return dir.to_owned();
-    }
-
-    let stem = host_dylib.file_stem().unwrap();
-    host_dylib.parent().unwrap_or(Path::new(".")).join(stem)
-}
-
-fn library_folder_name(host_dylib: &Path) -> Result<String> {
-    Ok(host_dylib
-        .file_stem()
-        .and_then(|stem| stem.to_str())
-        .context("dylib file name is not valid UTF-8")?
-        .to_owned())
-}
-
-fn artifact_key(dylib: &Path) -> String {
-    dylib
-        .file_stem()
-        .and_then(|stem| stem.to_str())
-        .unwrap_or_default()
-        .trim_start_matches("lib")
-        .to_owned()
-}
-
-fn generate_loader(dylib: &Path, entries: &[FunctionEntry], folder: &Path) -> Result<()> {
-    let dylib_bytes = std::fs::read(dylib)
-        .with_context(|| format!("failed to read {}", dylib.display()))?;
-    let hash = format!("{:x}", Sha256::digest(&dylib_bytes));
-
-    let ext = dylib
-        .extension()
-        .and_then(|e| e.to_str())
-        .unwrap_or("dylib");
-    let hashed_name = format!("{}.{}", hash, ext);
-
-    std::fs::create_dir_all(folder)
-        .with_context(|| format!("failed to create {}", folder.display()))?;
-
-    let hashed_dylib = folder.join(&hashed_name);
-    std::fs::copy(dylib, &hashed_dylib)
-        .with_context(|| format!("failed to copy dylib to {}", hashed_dylib.display()))?;
-
-    let wl = render_wl(&hashed_name, entries);
-    let manifest_path = folder.join("manifest.wl");
-    std::fs::write(&manifest_path, &wl)
-        .with_context(|| format!("failed to write {}", manifest_path.display()))?;
-
-    println!("{}", manifest_path.display());
-    Ok(())
-}
-
-fn load_manifest(dylib: &Path) -> Result<Vec<FunctionEntry>> {
-    type ManifestFn = unsafe extern "C" fn() -> *const std::os::raw::c_char;
-
-    let lib = unsafe { libloading::Library::new(dylib) }
-        .with_context(|| format!("failed to dlopen {}", dylib.display()))?;
-
-    let manifest_fn: libloading::Symbol<ManifestFn> =
-        unsafe { lib.get(b"__wolfram_manifest_data__\0") }.context(
-            "dylib does not export __wolfram_manifest_data__ \
-             — was it built with a wolfram-export-* crate?",
-        )?;
-
-    let ptr = unsafe { manifest_fn() };
-    anyhow::ensure!(!ptr.is_null(), "__wolfram_manifest_data__ returned null");
-
-    let json = unsafe { CStr::from_ptr(ptr) }
-        .to_str()
-        .context("manifest JSON is not valid UTF-8")?;
-
-    serde_json::from_str(json).context("failed to parse manifest JSON")
-}
-
-fn render_wl(dylib_name: &str, entries: &[FunctionEntry]) -> String {
-    let mut out = String::new();
-
-    out.push_str("(* Auto-generated by cargo wl build — do not edit *)\n\n");
-    out.push_str(&format!(
-        "With[{{$lib = FileNameJoin[{{DirectoryName[$InputFileName], \"{}\"}}]}},\n",
-        dylib_name
-    ));
-    out.push_str("  <|\n");
-
-    for (i, e) in entries.iter().enumerate() {
-        let sep = if i + 1 < entries.len() { "," } else { "" };
-        match e.kind.as_str() {
-            "Native" => {
-                let clean: Vec<String> =
-                    e.params.iter().map(|p| p.replace("System`", "")).collect();
-                let params = clean.join(", ");
-                let ret = e.ret.replace("System`", "");
-                out.push_str(&format!(
-                    "    \"{}\" -> LibraryFunctionLoad[$lib, \"{}\", {{{}}}, {}]{}\n",
-                    e.name, e.name, params, ret, sep
-                ));
-            },
-            "Wstp" => {
-                out.push_str(&format!(
-                    "    \"{}\" -> With[{{$f = LibraryFunctionLoad[$lib, \"{}\", LinkObject, LinkObject]}}, \
-                     Function[Block[{{$Context = \"RustLinkWSTPPrivateContext`\", $ContextPath = {{}}}}, $f[##1]]]]{}\n",
-                    e.name, e.name, sep
-                ));
-            },
-            "Wxf" => {
-                let load = format!(
-                    "LibraryFunctionLoad[$lib, \"{}\", \
-                     {{{{ByteArray, \"Constant\"}}}}, \
-                     {{ByteArray, Automatic}}]",
-                    e.name
-                );
-                out.push_str(&format!(
-                    "    \"{}\" -> Composition[BinaryDeserialize, \
-                     {}, BinarySerialize, List]{}\n",
-                    e.name, load, sep
-                ));
-            },
-            other => {
-                out.push_str(&format!(
-                    "    (* unknown export kind {other}: {} *){}\n",
-                    e.name, sep
-                ));
-            },
-        }
-    }
-
-    out.push_str("  |>\n");
-    out.push_str("]\n");
-
-    out
-}
-
 // ── WL script commands (test, evaluate, …) ───────────────────────────────────
 
 fn cmd_test(args: TestArgs) -> Result<()> {
-    // Always build all examples in debug mode, then discover dylib directories.
-    let dylibs = run_cargo_build(&["--examples".to_string()], None)?;
-    let lib_dirs: Vec<PathBuf> = {
-        let mut seen = HashSet::new();
-        dylibs
-            .iter()
-            .filter_map(|p| p.parent().map(Path::to_owned))
-            .filter(|d| seen.insert(d.clone()))
-            .collect()
-    };
+    let host_system_id = SystemID::try_current_rust_target()
+        .map_err(|e| anyhow::anyhow!("unsupported host platform: {e}"))?;
 
-    run_wl_script(include_str!("../commands/test.wl"), args.files, lib_dirs)
+    let dylibs = run_cargo_build(&["--examples".to_string()], None)?;
+    if dylibs.is_empty() {
+        eprintln!("cargo wl: no cdylib examples found");
+        return run_wl_script(include_str!("../commands/test.wl"), args.files, vec![]);
+    }
+
+    // Output dir: wl-test/ sibling of the cargo examples dir.
+    let out_dir = dylibs.first()
+        .and_then(|p| p.parent())
+        .map(|p| p.join("wl-test"))
+        .unwrap_or_else(|| PathBuf::from("wl-test"));
+
+    // Collect infos — entries are optional (not all examples export a manifest).
+    let infos: Vec<DylibInfo> = dylibs.iter()
+        .map(|d| collect_dylib_info(d))
+        .collect::<Result<_>>()?;
+
+    // Force named exports so LibraryFunctionLoad["libfoo", ...] resolves correctly.
+    let lib_dir = generate_package(&infos, host_system_id, &out_dir, true)?;
+
+    run_wl_script(include_str!("../commands/test.wl"), args.files, vec![lib_dir])
 }
+
 
 fn cmd_evaluate(args: EvaluateArgs) -> Result<()> {
     run_wl_script(include_str!("../commands/evaluate.wl"), args.files, vec![])

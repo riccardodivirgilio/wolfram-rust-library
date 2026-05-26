@@ -4,6 +4,7 @@ Function @ Module[{passed = 0, failed = 0},
       FileNames["*.wlt", #Cwd, Infinity],
       FileNames[#Files, #Cwd]
     ]},
+    Print["library path: ", #LibPaths];
   Print["running from: ", #Cwd];
   Print["files: ", files];
   TestReport[
