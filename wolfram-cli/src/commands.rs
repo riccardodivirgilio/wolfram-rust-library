@@ -13,8 +13,7 @@ pub fn cmd_test(args: TestArgs) -> Result<()> {
 
     // Always build with --workspace so running from the workspace root picks
     // up examples from every member package, not just the current one.
-    let mut build_args = vec!["--workspace".to_string(), "--examples".to_string()];
-    build_args.extend(args.cargo_args);
+    let build_args = vec!["--workspace".to_string(), "--examples".to_string()];
 
     let dylibs = run_cargo_build(&build_args, None)?;
     if dylibs.is_empty() {
@@ -33,7 +32,7 @@ pub fn cmd_test(args: TestArgs) -> Result<()> {
 
     let lib_dir = generate_package(&infos, host_system_id, &out_dir, true, true)?;
 
-    run_wl_script(include_str!("../commands/test.wl"), vec![], vec![lib_dir], args.out)
+    run_wl_script(include_str!("../commands/test.wl"), args.files, vec![lib_dir], args.out)
 }
 
 pub fn cmd_evaluate(args: EvaluateArgs) -> Result<()> {
@@ -61,8 +60,14 @@ fn run_wl_script(
         Symbol::new("System`ToExpression"),
         vec![Expr::string(content.trim()), Expr::from(Symbol::new("System`InputForm"))],
     );
-    let files_list = Expr::list(files.iter().map(|f| Expr::string(f.as_str())).collect());
     let cwd = std::env::current_dir().context("failed to get current directory")?;
+    let abs_files: Vec<String> = files.iter().map(|f| {
+        let p = std::path::Path::new(f);
+        let abs = if p.is_absolute() { p.to_owned() } else { cwd.join(p) };
+        anyhow::ensure!(abs.exists(), "file not found: {}", abs.display());
+        abs.to_str().context("file path is not valid UTF-8").map(|s| s.to_owned())
+    }).collect::<Result<_>>()?;
+    let files_list = Expr::list(abs_files.iter().map(|f| Expr::string(f.as_str())).collect());
     let cwd_str = cwd.to_str().context("current directory is not valid UTF-8")?;
     let lib_paths_list = Expr::list(
         lib_dirs.iter()
