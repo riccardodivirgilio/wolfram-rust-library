@@ -8,7 +8,23 @@ use std::ffi::CStr;
 use std::io::BufReader;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
-use wolfram_app_discovery::SystemID;
+use wolfram_app_discovery::{SystemID, WolframApp};
+use wolfram_expr::{Expr, Symbol};
+
+#[derive(Subcommand)]
+enum WlScriptCmd {
+    /// Build the crate then run test files through a Wolfram kernel using TestReport
+    Test(TestArgs),
+    /// Evaluate each file in a Wolfram kernel using Get
+    Evaluate(EvaluateArgs),
+}
+
+fn dispatch_wl_script(cmd: WlScriptCmd) -> Result<()> {
+    match cmd {
+        WlScriptCmd::Test(args) => cmd_test(args),
+        WlScriptCmd::Evaluate(args) => cmd_evaluate(args),
+    }
+}
 
 // ── CLI structure ────────────────────────────────────────────────────────────
 
@@ -33,6 +49,9 @@ struct WlArgs {
 enum WlCmd {
     /// Build the crate and generate a WL loader alongside each cdylib
     Build(BuildArgs),
+    /// Run a WL script command against the given files
+    #[command(flatten)]
+    Script(WlScriptCmd),
 }
 
 #[derive(Parser)]
@@ -48,6 +67,18 @@ struct BuildArgs {
     /// Extra arguments forwarded verbatim to `cargo build`
     #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
     cargo_args: Vec<String>,
+}
+
+#[derive(Parser)]
+struct TestArgs {
+    /// Test files (.wlt or .wl); defaults to all *.wl/*.wlt in the current directory
+    files: Vec<String>,
+}
+
+#[derive(Parser)]
+struct EvaluateArgs {
+    /// Files to evaluate; defaults to all *.wl in the current directory
+    files: Vec<String>,
 }
 
 // ── Manifest types ───────────────────────────────────────────────────────────
@@ -74,8 +105,6 @@ fn rust_target(id: SystemID) -> Result<&'static str> {
     match id {
         SystemID::MacOSX_x86_64 => Ok("x86_64-apple-darwin"),
         SystemID::MacOSX_ARM64 => Ok("aarch64-apple-darwin"),
-        // Prefer the GNU Windows target for cross builds; MSVC cross-linking
-        // is host/toolchain dependent and can be added as an explicit override.
         SystemID::Windows_x86_64 => Ok("x86_64-pc-windows-gnu"),
         SystemID::Linux_x86_64 => Ok("x86_64-unknown-linux-gnu"),
         SystemID::Linux_ARM64 => Ok("aarch64-unknown-linux-gnu"),
@@ -93,6 +122,7 @@ fn main() -> Result<()> {
     let Cargo::Wl(args) = Cargo::parse();
     match args.cmd {
         WlCmd::Build(args) => cmd_build(args),
+        WlCmd::Script(script_cmd) => dispatch_wl_script(script_cmd),
     }
 }
 
@@ -104,7 +134,6 @@ fn cmd_build(args: BuildArgs) -> Result<()> {
     let cleanup = args.cleanup || parsed.cleanup;
     let host_system_id = SystemID::try_current_rust_target()
         .map_err(|e| anyhow::anyhow!("unsupported host platform: {e}"))?;
-    // Eagerly validate that the host has a known cross-compile target.
     rust_target(host_system_id)?;
     let system_ids = target_system_ids(host_system_id, parsed.system_ids);
 
@@ -146,8 +175,7 @@ fn cmd_build(args: BuildArgs) -> Result<()> {
         let library_folder_name = library_folder_name(host_dylib)?;
         let host_key = artifact_key(host_dylib);
         for (system_id, dylibs) in &artifacts_by_system_id {
-            let Some(dylib) = dylibs.iter().find(|dylib| artifact_key(dylib) == host_key)
-            else {
+            let Some(dylib) = dylibs.iter().find(|dylib| artifact_key(dylib) == host_key) else {
                 anyhow::bail!(
                     "target build for {} did not produce an artifact matching {}",
                     system_id.as_str(),
@@ -234,12 +262,14 @@ fn parse_forwarded_args(args: Vec<String>) -> Result<ParsedBuildArgs> {
                 .next()
                 .context("--system-id requires a Wolfram SystemID value")?;
             system_ids.push(
-                value.parse::<SystemID>()
+                value
+                    .parse::<SystemID>()
                     .map_err(|()| anyhow::anyhow!("unrecognized Wolfram SystemID: {value:?}"))?,
             );
         } else if let Some(value) = arg.strip_prefix("--system-id=") {
             system_ids.push(
-                value.parse::<SystemID>()
+                value
+                    .parse::<SystemID>()
                     .map_err(|()| anyhow::anyhow!("unrecognized Wolfram SystemID: {value:?}"))?,
             );
         } else if arg == "--out" {
@@ -306,7 +336,6 @@ fn artifact_key(dylib: &Path) -> String {
 }
 
 fn generate_loader(dylib: &Path, entries: &[FunctionEntry], folder: &Path) -> Result<()> {
-    // Compute SHA256 of the dylib bytes.
     let dylib_bytes = std::fs::read(dylib)
         .with_context(|| format!("failed to read {}", dylib.display()))?;
     let hash = format!("{:x}", Sha256::digest(&dylib_bytes));
@@ -320,13 +349,11 @@ fn generate_loader(dylib: &Path, entries: &[FunctionEntry], folder: &Path) -> Re
     std::fs::create_dir_all(folder)
         .with_context(|| format!("failed to create {}", folder.display()))?;
 
-    // Copy dylib under its content hash.
     let hashed_dylib = folder.join(&hashed_name);
     std::fs::copy(dylib, &hashed_dylib)
         .with_context(|| format!("failed to copy dylib to {}", hashed_dylib.display()))?;
 
-    // Generate manifest.wl next to the hashed dylib in the SystemID/library folder.
-    let wl = render_wl(&hashed_name, &entries);
+    let wl = render_wl(&hashed_name, entries);
     let manifest_path = folder.join("manifest.wl");
     std::fs::write(&manifest_path, &wl)
         .with_context(|| format!("failed to write {}", manifest_path.display()))?;
@@ -388,9 +415,6 @@ fn render_wl(dylib_name: &str, entries: &[FunctionEntry]) -> String {
                 ));
             },
             "Wxf" => {
-                // Every WXF function has a single ByteArray-in / ByteArray-out
-                // C-ABI surface; the WL side bundles all args into a List and
-                // calls BinarySerialize once.
                 let load = format!(
                     "LibraryFunctionLoad[$lib, \"{}\", \
                      {{{{ByteArray, \"Constant\"}}}}, \
@@ -416,4 +440,130 @@ fn render_wl(dylib_name: &str, entries: &[FunctionEntry]) -> String {
     out.push_str("]\n");
 
     out
+}
+
+// ── WL script commands (test, evaluate, …) ───────────────────────────────────
+
+fn cmd_test(args: TestArgs) -> Result<()> {
+    // Always build all examples in debug mode, then discover dylib directories.
+    let dylibs = run_cargo_build(&["--examples".to_string()], None)?;
+    let lib_dirs: Vec<PathBuf> = {
+        let mut seen = HashSet::new();
+        dylibs
+            .iter()
+            .filter_map(|p| p.parent().map(Path::to_owned))
+            .filter(|d| seen.insert(d.clone()))
+            .collect()
+    };
+
+    run_wl_script(include_str!("../commands/test.wl"), args.files, lib_dirs)
+}
+
+fn cmd_evaluate(args: EvaluateArgs) -> Result<()> {
+    run_wl_script(include_str!("../commands/evaluate.wl"), args.files, vec![])
+}
+
+fn run_wl_script(content: &str, files: Vec<String>, lib_dirs: Vec<PathBuf>) -> Result<()> {
+    let app = WolframApp::try_default().context("no Wolfram installation found")?;
+    let kernel_path = app
+        .kernel_executable_path()
+        .context("could not locate WolframKernel")?;
+
+    eprintln!("launching {}", kernel_path.display());
+
+    let mut kernel = wstp::kernel::WolframKernelProcess::launch(&kernel_path)
+        .map_err(|e| anyhow::anyhow!("{:?}", e))?;
+    let link = kernel.link();
+
+    drain_packets(link)?;
+
+    let fn_expr = Expr::normal(
+        Symbol::new("System`ToExpression"),
+        vec![Expr::string(content.trim()), Expr::from(Symbol::new("System`InputForm"))],
+    );
+    let files_list = Expr::normal(
+        Symbol::new("System`List"),
+        files.iter().map(|f| Expr::string(f.as_str())).collect(),
+    );
+    let cwd = std::env::current_dir().context("failed to get current directory")?;
+    let cwd_str = cwd.to_str().context("current directory is not valid UTF-8")?;
+    let lib_paths_list = Expr::normal(
+        Symbol::new("System`List"),
+        lib_dirs
+            .iter()
+            .map(|p| {
+                p.to_str()
+                    .map(Expr::string)
+                    .with_context(|| format!("lib dir is not valid UTF-8: {}", p.display()))
+            })
+            .collect::<Result<_>>()?,
+    );
+    let assoc = Expr::normal(
+        Symbol::new("System`Association"),
+        vec![
+            Expr::normal(Symbol::new("System`Rule"), vec![Expr::string("Files"), files_list]),
+            Expr::normal(Symbol::new("System`Rule"), vec![Expr::string("Cwd"), Expr::string(cwd_str)]),
+            Expr::normal(Symbol::new("System`Rule"), vec![Expr::string("LibPaths"), lib_paths_list]),
+        ],
+    );
+    let call = Expr::normal(
+        Symbol::new("System`ToString"),
+        vec![
+            Expr::normal(fn_expr, vec![assoc]),
+            Expr::from(Symbol::new("System`InputForm")),
+        ],
+    );
+
+    link.put_eval_packet(&call)
+        .map_err(|e| anyhow::anyhow!("failed to send eval packet: {:?}", e))?;
+
+    let result = read_return_packet(link)?;
+    match result.kind() {
+        wolfram_expr::ExprKind::String(s) => println!("{s}"),
+        _ => println!("{result}"),
+    }
+
+    Ok(())
+}
+
+fn drain_packets(link: &mut wstp::Link) -> Result<()> {
+    while link.is_ready() {
+        link.raw_next_packet()
+            .context("failed to read packet while draining")?;
+        link.new_packet()
+            .context("failed to advance past packet while draining")?;
+    }
+    Ok(())
+}
+
+fn read_return_packet(link: &mut wstp::Link) -> Result<Expr> {
+    loop {
+        let pkt = link
+            .raw_next_packet()
+            .context("failed to read packet from kernel")?;
+        match pkt {
+            p if p == wstp::sys::RETURNPKT => {
+                let result = link.get_expr().context("failed to read return value")?;
+                link.new_packet()
+                    .context("failed to advance past ReturnPacket")?;
+                return Ok(result);
+            },
+            p if p == wstp::sys::TEXTPKT => {
+                // Print[] output
+                let text = link.get_expr().context("failed to read TextPacket")?;
+                link.new_packet()?;
+                if let wolfram_expr::ExprKind::String(s) = text.kind() {
+                    print!("{s}");
+                }
+            },
+            p if p == wstp::sys::MESSAGEPKT => {
+                // The kernel follows every MessagePacket with a TextPacket
+                // containing the formatted message text — just drain this one.
+                link.new_packet()?;
+            },
+            _ => {
+                link.new_packet().context("failed to skip packet")?;
+            },
+        }
+    }
 }

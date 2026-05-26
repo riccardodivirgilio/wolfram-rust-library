@@ -56,15 +56,21 @@ impl Prefix {
 }
 
 /// Look up one crate name in the caller's `Cargo.toml`. Returns the path-prefix
-/// token stream (`::<rename>` or `crate`) if found, `None` otherwise.
+/// token stream (`::<rename>`) if found, `None` otherwise.
+///
+/// We always emit an absolute external path, even when `proc-macro-crate`
+/// returns `Itself` (meaning the caller's package owns this crate). Examples,
+/// doctests, and integration tests within the same package all compile as
+/// separate crates that import the library externally, so `crate::` would
+/// resolve to the wrong root. The `#[export]` macro is only ever invoked from
+/// those external-import contexts, never from within the library's own source.
 fn found_as(name: &str) -> Option<TokenStream2> {
-    match crate_name(name).ok()? {
-        FoundCrate::Itself => Some(quote! { crate }),
-        FoundCrate::Name(renamed) => {
-            let ident = format_ident!("{}", renamed);
-            Some(quote! { ::#ident })
-        },
-    }
+    let renamed = match crate_name(name).ok()? {
+        FoundCrate::Itself => name.replace('-', "_"),
+        FoundCrate::Name(n) => n,
+    };
+    let ident = format_ident!("{}", renamed);
+    Some(quote! { ::#ident })
 }
 
 /// Identifier of the const-assert function the macro emits to surface a clear
