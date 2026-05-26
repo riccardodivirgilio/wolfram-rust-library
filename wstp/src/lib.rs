@@ -939,6 +939,23 @@ impl Link {
             ExprKind::Real(real) => {
                 self.put_f64(**real)?;
             },
+            ExprKind::Association(assoc) => {
+                self.put_raw_type(i32::from(sys::WSTKFUNC))?;
+                self.put_arg_count(assoc.len())?;
+                self.put_symbol("System`Association")?;
+                for entry in assoc {
+                    let head = if entry.delayed {
+                        "System`RuleDelayed"
+                    } else {
+                        "System`Rule"
+                    };
+                    self.put_raw_type(i32::from(sys::WSTKFUNC))?;
+                    self.put_arg_count(2)?;
+                    self.put_symbol(head)?;
+                    self.put_expr(&entry.key)?;
+                    self.put_expr(&entry.value)?;
+                }
+            },
             // ExprKind is #[non_exhaustive]: new WXF-derived variants (NumericArray,
             // PackedArray, ByteArray, Association, BigInteger, BigReal) don't have a
             // direct WSTP-native serialization here. To send them over WSTP, convert
