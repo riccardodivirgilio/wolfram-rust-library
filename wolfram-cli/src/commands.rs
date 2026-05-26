@@ -11,10 +11,15 @@ pub fn cmd_test(args: TestArgs) -> Result<()> {
     let host_system_id = SystemID::try_current_rust_target()
         .map_err(|e| anyhow::anyhow!("unsupported host platform: {e}"))?;
 
-    let dylibs = run_cargo_build(&["--examples".to_string()], None)?;
+    // Always build with --workspace so running from the workspace root picks
+    // up examples from every member package, not just the current one.
+    let mut build_args = vec!["--workspace".to_string(), "--examples".to_string()];
+    build_args.extend(args.cargo_args);
+
+    let dylibs = run_cargo_build(&build_args, None)?;
     if dylibs.is_empty() {
         eprintln!("cargo wl: no cdylib examples found");
-        return run_wl_script(include_str!("../commands/test.wl"), args.files, vec![], args.out);
+        return run_wl_script(include_str!("../commands/test.wl"), vec![], vec![], args.out);
     }
 
     let out_dir = dylibs.first()
@@ -28,7 +33,7 @@ pub fn cmd_test(args: TestArgs) -> Result<()> {
 
     let lib_dir = generate_package(&infos, host_system_id, &out_dir, true, true)?;
 
-    run_wl_script(include_str!("../commands/test.wl"), args.files, vec![lib_dir], args.out)
+    run_wl_script(include_str!("../commands/test.wl"), vec![], vec![lib_dir], args.out)
 }
 
 pub fn cmd_evaluate(args: EvaluateArgs) -> Result<()> {

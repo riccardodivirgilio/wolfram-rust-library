@@ -66,8 +66,9 @@ pub struct TestArgs {
     /// Where to write the result expression as WXF (default: temp dir)
     #[arg(long)]
     pub out: Option<PathBuf>,
-    /// Test files (.wlt); defaults to all *.wlt found recursively
-    pub files: Vec<String>,
+    /// Extra arguments forwarded verbatim to `cargo build`
+    #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+    pub cargo_args: Vec<String>,
 }
 
 #[derive(Parser)]
