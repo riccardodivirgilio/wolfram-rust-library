@@ -9,6 +9,7 @@ members = [
     "wolfram-library-link",
     "wolfram-library-link-sys",
     "wolfram-library-link-macros",
+    "wolfram-examples",
     "xtask",
 ]
 

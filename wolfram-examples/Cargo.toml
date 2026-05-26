@@ -1,0 +1,18 @@
+[package]
+name = "wolfram-examples"
+version = "0.2.10"
+edition = "2021"
+publish = false
+
+[dependencies]
+wolfram-library-link = { version = "0.2.10", path = "../wolfram-library-link" }
+
+[[example]]
+name = "legacy_native"
+crate-type = ["cdylib"]
+required-features = ["wolfram-library-link/automate-function-loading-boilerplate"]
+
+[[example]]
+name = "legacy_wstp"
+crate-type = ["cdylib"]
+required-features = ["wolfram-library-link/automate-function-loading-boilerplate"]
