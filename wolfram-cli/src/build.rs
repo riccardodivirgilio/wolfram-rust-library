@@ -136,27 +136,17 @@ pub fn collect_dylib_info(dylib: &Path) -> Result<DylibInfo> {
     Ok(DylibInfo { src: dylib.to_owned(), filename, name, hash, entries })
 }
 
-fn calver_today() -> String {
-    let secs = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs();
-    let mut days = secs / 86400;
-    let mut year = 1970u64;
-    loop {
-        let in_year = if year % 4 == 0 && (year % 100 != 0 || year % 400 == 0) { 366 } else { 365 };
-        if days < in_year { break; }
-        days -= in_year;
-        year += 1;
-    }
-    let leap = year % 4 == 0 && (year % 100 != 0 || year % 400 == 0);
-    let month_days = [31u64, if leap { 29 } else { 28 }, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
-    let mut month = 1u64;
-    for &md in &month_days {
-        if days < md { break; }
-        days -= md;
-        month += 1;
-    }
-    let day = days + 1;
-    format!("{year}.{month}.{day}")
+fn cargo_paclet_defaults() -> Result<(String, String)> {
+    let meta = cargo_metadata::MetadataCommand::new()
+        .exec()
+        .context("failed to read cargo metadata")?;
+    let pkg = meta.root_package().context("no root package found")?;
+    let pi = &pkg.metadata["wl"]["pacletinfo"];
+    let name = pi["name"].as_str().unwrap_or(&pkg.name).to_owned();
+    let version = pi["version"].as_str()
+        .map(str::to_owned)
+        .unwrap_or_else(|| pkg.version.to_string());
+    Ok((name, version))
 }
 
 /// Build the three WL output files and copy all dylibs into `out_dir/SystemID/`.
@@ -235,9 +225,11 @@ pub fn generate_package(
     )?;
 
     // ── PacletInfo.wl
-    let default_name = infos.first().map(|i| i.name.as_str()).unwrap_or("Library");
-    let paclet_name = paclet_name.unwrap_or(default_name);
-    let default_version = calver_today();
+    let (default_name, default_version) = cargo_paclet_defaults().unwrap_or_else(|_| {
+        let n = infos.first().map(|i| i.name.clone()).unwrap_or_else(|| "Library".to_owned());
+        (n, "0.1.0".to_owned())
+    });
+    let paclet_name = paclet_name.unwrap_or(default_name.as_str());
     let paclet_version = paclet_version.unwrap_or(default_version.as_str());
     std::fs::write(
         out_dir.join("PacletInfo.wl"),
