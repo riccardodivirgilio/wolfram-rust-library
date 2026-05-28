@@ -57,9 +57,9 @@ fn main() {
             target,
             wolfram_version,
         } => {
-            let [major, minor, patch]: [u32; 3] = wolfram_version
-                .try_into()
-                .expect("--wolfram-version requires 3 components, e.g. --wolfram-version=13.0.1");
+            let [major, minor, patch]: [u32; 3] = wolfram_version.try_into().expect(
+                "--wolfram-version requires 3 components, e.g. --wolfram-version=13.0.1",
+            );
             let wolfram_version = WolframVersion::new(major, minor, patch);
             let sdk = WstpSdk::try_from_directory(sdk_path.clone())
                 .map_err(|err| {
@@ -216,6 +216,11 @@ fn generate_library_link_bindings(
         .constified_enum_module("MNumericArray_Convert_Method")
         .constified_enum_module("MImage_Data_Type")
         .constified_enum_module("MImage_CS_Type")
+        // `mcomplex` is provided by `wolfram-expr::Complex64` (re-exported as
+        // `mcomplex` in wolfram-library-link-sys/src/lib.rs). Skip the bindgen
+        // definition + layout test so the same complex type is shared across
+        // the entire crate stack.
+        .blocklist_type("mcomplex")
         .clang_args(&["-target", target])
         .generate()
         .expect("unable to generate Rust bindings to Wolfram LibraryLink using bindgen");
@@ -252,7 +257,9 @@ fn determine_targets() -> &'static [&'static str] {
     } else if cfg!(target_os = "linux") {
         &["x86_64-unknown-linux-gnu", "aarch64-unknown-linux-gnu"]
     } else {
-        panic!("unsupported operating system for determining bindings target architecture")
+        panic!(
+            "unsupported operating system for determining bindings target architecture"
+        )
     }
 }
 

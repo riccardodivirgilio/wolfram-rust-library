@@ -42,7 +42,6 @@ pub mod env_vars {
     // /// *Deprecated:* Use [`WOLFRAM_LIBRARY_LINK_C_INCLUDES_DIRECTORY`] instead.
     // #[deprecated(note = "use WOLFRAM_LIBRARY_LINK_C_INCLUDES_DIRECTORY instead.")]
 
-
     /// Wolfram `$InstallationDirectory/SystemFiles/IncludeFiles/C` directory.
     pub const WOLFRAM_C_INCLUDES: &str = "WOLFRAM_C_INCLUDES";
 

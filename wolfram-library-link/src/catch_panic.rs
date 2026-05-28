@@ -38,7 +38,7 @@ pub struct CaughtPanic {
 }
 
 impl CaughtPanic {
-    pub(crate) fn to_pretty_expr(&self) -> Expr {
+    pub fn to_pretty_expr(&self) -> Expr {
         let CaughtPanic {
             message,
             location,
@@ -50,24 +50,14 @@ impl CaughtPanic {
         let message = Expr::string(message.unwrap_or("Rust panic (no message)".into()));
         let location = Expr::string(location.unwrap_or("Unknown".into()));
 
-        let backtrace = {
-            // Avoid showing the backtrace if it hasn't been explicitly requested by the user.
-            // This avoids calling `.resolve()` below, which can sometimes be very slow (100s of
-            // millisends).
-            if !cfg!(feature = "panic-failure-backtraces") || !should_show_backtrace() {
-                Expr::normal(Symbol::new("System`Missing"), vec![Expr::string(
-                    "NotEnabled",
-                )])
-            } else {
-                #[cfg(feature = "panic-failure-backtraces")]
-                {
-                    display_backtrace(backtrace)
-                }
+        #[cfg(feature = "panic-failure-backtraces")]
+        let backtrace = display_backtrace(backtrace);
 
-                #[cfg(not(feature = "panic-failure-backtraces"))]
-                unreachable!()
-            }
-        };
+        #[cfg(not(feature = "panic-failure-backtraces"))]
+        let backtrace = Expr::normal(
+            Symbol::new("System`Missing"),
+            vec![Expr::string("NotEnabled")],
+        );
 
         // Failure["RustPanic", <|
         //     "MessageTemplate" -> "Rust LibraryLink function panic: `message`",
@@ -75,35 +65,46 @@ impl CaughtPanic {
         //     "SourceLocation" -> "...",
         //     "Backtrace" -> "..."
         // |>]
-        Expr::normal(Symbol::new("System`Failure"), vec![
-            Expr::string("RustPanic"),
-            Expr::normal(Symbol::new("System`Association"), vec![
-                Expr::normal(Symbol::new("System`Rule"), vec![
-                    Expr::string("MessageTemplate"),
-                    Expr::string("Rust LibraryLink function panic: `message`"),
-                ]),
-                Expr::normal(Symbol::new("System`Rule"), vec![
-                    Expr::string("MessageParameters"),
-                    Expr::normal(Symbol::new("System`Association"), vec![Expr::normal(
-                        Symbol::new("System`Rule"),
-                        vec![Expr::string("message"), message],
-                    )]),
-                ]),
-                Expr::normal(Symbol::new("System`Rule"), vec![
-                    Expr::string("SourceLocation"),
-                    location,
-                ]),
-                Expr::normal(Symbol::new("System`Rule"), vec![
-                    Expr::string("Backtrace"),
-                    backtrace,
-                ]),
-            ]),
-        ])
+        Expr::normal(
+            Symbol::new("System`Failure"),
+            vec![
+                Expr::string("RustPanic"),
+                Expr::normal(
+                    Symbol::new("System`Association"),
+                    vec![
+                        Expr::normal(
+                            Symbol::new("System`Rule"),
+                            vec![
+                                Expr::string("MessageTemplate"),
+                                Expr::string("`message`"),
+                            ],
+                        ),
+                        Expr::normal(
+                            Symbol::new("System`Rule"),
+                            vec![
+                                Expr::string("MessageParameters"),
+                                Expr::normal(
+                                    Symbol::new("System`Association"),
+                                    vec![Expr::normal(
+                                        Symbol::new("System`Rule"),
+                                        vec![Expr::string("message"), message],
+                                    )],
+                                ),
+                            ],
+                        ),
+                        Expr::normal(
+                            Symbol::new("System`Rule"),
+                            vec![Expr::string("SourceLocation"), location],
+                        ),
+                        Expr::normal(
+                            Symbol::new("System`Rule"),
+                            vec![Expr::string("Backtrace"), backtrace],
+                        ),
+                    ],
+                ),
+            ],
+        )
     }
-}
-
-fn should_show_backtrace() -> bool {
-    std::env::var(crate::BACKTRACE_ENV_VAR).is_ok()
 }
 
 #[cfg(feature = "panic-failure-backtraces")]
@@ -115,95 +116,130 @@ fn display_backtrace(bt: Option<Backtrace>) -> Expr {
         // Expr::string(format!("{:?}", bt))
 
         let mut frames = Vec::new();
-        for (index, frame) in bt.frames().into_iter().enumerate() {
+        for frame in bt.frames() {
             use backtrace::{BacktraceSymbol, SymbolName};
 
-            // TODO: Show all the symbols, not just the last one. A frame will be
-            //       associated with more than one symbol if any inlining occured, so this
-            //       would help show better backtraces in optimized builds.
             let bt_symbol: Option<&BacktraceSymbol> = frame.symbols().last();
 
             let name: String = bt_symbol
                 .and_then(BacktraceSymbol::name)
                 .as_ref()
-                .map(|sym: &SymbolName| format!("{}", sym))
+                .map(|sym: &SymbolName| format!("{}", sym).trim().to_owned())
                 .unwrap_or("<unknown>".into());
 
-            // Skip frames from within the `backtrace` crate itself.
             if name.starts_with("backtrace::") {
                 continue;
             }
 
             let filename = bt_symbol.and_then(BacktraceSymbol::filename);
             let lineno = bt_symbol.and_then(BacktraceSymbol::lineno);
-            let file_and_line: String = match (filename, lineno) {
-                (Some(path), Some(lineno)) => format!("{}:{}", path.display(), lineno),
-                (Some(path), None) => format!("{}", path.display()),
-                _ => "".into(),
+
+            let path_str = filename
+                .map(|p| p.display().to_string().trim().to_owned())
+                .unwrap_or_default();
+
+            let label = match lineno {
+                Some(line) => format!("{}:{}", path_str, line),
+                None => path_str.clone(),
             };
 
-            // Row[{
-            //     %[index.to_string()],
-            //     ": ",
-            //     'file_and_line,
-            //     'name
-            // }]
-            frames.push(Expr::normal(Symbol::new("System`Row"), vec![Expr::normal(
-                Symbol::new("System`List"),
-                vec![
-                    Expr::string(index.to_string()),
-                    Expr::string(": "),
-                    Expr::string(file_and_line),
-                    Expr::string(name),
-                ],
-            )]));
+            let file_exists = filename.map(|p| p.exists()).unwrap_or(false);
+
+            // Only make a clickable link if the file actually exists on disk.
+            // This naturally excludes /rustc/... and other phantom paths baked
+            // in by the compiler that are not present on the user's machine.
+            let location = if file_exists {
+                Expr::normal(
+                    Symbol::new("System`Button"),
+                    vec![
+                        Expr::normal(
+                            Symbol::new("System`Style"),
+                            vec![
+                                Expr::string(label),
+                                Expr::normal(
+                                    Symbol::new("System`RGBColor"),
+                                    vec![
+                                        Expr::real(0.25),
+                                        Expr::real(0.48),
+                                        Expr::real(1.0),
+                                    ],
+                                ),
+                                Expr::symbol(Symbol::new("System`Small")),
+                                Expr::normal(
+                                    Symbol::new("System`Rule"),
+                                    vec![
+                                        Expr::symbol(Symbol::new("System`FontFamily")),
+                                        Expr::string("Courier"),
+                                    ],
+                                ),
+                            ],
+                        ),
+                        Expr::normal(
+                            Symbol::new("System`SystemOpen"),
+                            vec![Expr::string(path_str.clone())],
+                        ),
+                        Expr::normal(
+                            Symbol::new("System`Rule"),
+                            vec![
+                                Expr::symbol(Symbol::new("System`Appearance")),
+                                Expr::string("Frameless"),
+                            ],
+                        ),
+                    ],
+                )
+            } else {
+                Expr::normal(
+                    Symbol::new("System`Style"),
+                    vec![
+                        Expr::string(label),
+                        Expr::symbol(Symbol::new("System`Small")),
+                        Expr::normal(
+                            Symbol::new("System`Rule"),
+                            vec![
+                                Expr::symbol(Symbol::new("System`FontFamily")),
+                                Expr::string("Courier"),
+                            ],
+                        ),
+                    ],
+                )
+            };
+
+            let row = if path_str.is_empty() {
+                Expr::string(name.clone())
+            } else {
+                Expr::normal(
+                    Symbol::new("System`Row"),
+                    vec![Expr::normal(
+                        Symbol::new("System`List"),
+                        vec![location, Expr::string(" in "), Expr::string(name)],
+                    )],
+                )
+            };
+
+            frames.push(row);
         }
 
-        let frames = Expr::normal(Symbol::new("System`List"), frames);
-        // Set ImageSize so that the lines don't wordwrap for very long function names,
-        // which makes the backtrace hard to read.
-
-        // Column['frames, ImageSize -> {1200, Automatic}]
-        Expr::normal(Symbol::new("System`Column"), vec![
-            frames,
-            Expr::normal(Symbol::new("System`Rule"), vec![
-                Expr::symbol(Symbol::new("System`ImageSize")),
-                Expr::normal(Symbol::new("System`List"), vec![
-                    Expr::from(1200i64),
-                    Expr::symbol(Symbol::new("System`Automatic")),
-                ]),
-            ]),
-        ])
+        Expr::normal(
+            Symbol::new("System`Style"),
+            vec![
+                Expr::normal(
+                    Symbol::new("System`Column"),
+                    vec![Expr::normal(Symbol::new("System`List"), frames)],
+                ),
+                Expr::normal(
+                    Symbol::new("System`Rule"),
+                    vec![
+                        Expr::symbol(Symbol::new("System`FontFamily")),
+                        Expr::string("Courier"),
+                    ],
+                ),
+            ],
+        )
     } else {
         Expr::string("<unable to capture backtrace>")
     };
 
-    // Row[{
-    //     Style["Backtrace", Bold],
-    //     ": ",
-    //     Style['bt, FontSize -> 13, FontFamily -> "Source Code Pro"]
-    // }]
-    Expr::normal(Symbol::new("System`Row"), vec![Expr::normal(
-        Symbol::new("System`List"),
-        vec![
-            Expr::normal(Symbol::new("System`Style"), vec![
-                Expr::string("Backtrace"),
-                Expr::symbol(Symbol::new("System`Bold")),
-            ]),
-            Expr::string(": "),
-            Expr::normal(Symbol::new("System`Style"), vec![
-                bt,
-                Expr::normal(Symbol::new("System`Rule"), vec![
-                    Expr::symbol(Symbol::new("System`FontSize")),
-                    Expr::from(13i16),
-                ]),
-                Expr::normal(Symbol::new("System`Rule"), vec![
-                    Expr::symbol(Symbol::new("System`FontFamily")),
-                    Expr::string("Source Code Pro"),
-                ]),
-            ]),
-        ],
-    )])
+    bt
 }
 
 /// Call `func` and catch any unwinding panic which occurs during that call, returning
@@ -285,7 +321,7 @@ fn get_caught_panic() -> CaughtPanic {
     caught_panic
 }
 
-fn custom_hook(info: &panic::PanicInfo) {
+fn custom_hook(info: &panic::PanicHookInfo) {
     let caught_panic = {
         let message: Option<String> = get_panic_message(info);
         let location: Option<String> = info.location().map(ToString::to_string);
@@ -324,7 +360,7 @@ fn custom_hook(info: &panic::PanicInfo) {
     }
 }
 
-fn get_panic_message(info: &panic::PanicInfo) -> Option<String> {
+fn get_panic_message(info: &panic::PanicHookInfo) -> Option<String> {
     // Extract the message from `panic!("...")` statements.
     // In this case, the payload is always the static formatting string.
     if let Some(string) = info.payload().downcast_ref::<&str>() {

@@ -1,0 +1,23 @@
+[package]
+name = "cargo-wl"
+version = "0.5.0"
+edition = "2021"
+description = "Cargo subcommand for building and packaging Wolfram LibraryLink crates"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/WolframResearch/wolfram-rust-library"
+
+[[bin]]
+name = "cargo-wl"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = "1"
+cargo_metadata = "0.23.1"
+clap = { version = "4", features = ["derive"] }
+libloading = "0.8"
+sha2 = "0.10"
+wolfram-app-discovery  = { version = "0.5.0", path = "../wolfram-app-discovery" }
+wolfram-export-core    = { version = "0.5.0", path = "../wolfram-export-core", default-features = false }
+wolfram-expr           = { version = "0.5.0", path = "../wolfram-expr" }
+wolfram-serializer     = { version = "0.5.0", path = "../wolfram-serializer" }
+wstp                   = { version = "0.5.0", path = "../wstp" }

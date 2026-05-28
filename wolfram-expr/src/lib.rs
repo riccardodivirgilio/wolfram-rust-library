@@ -3,7 +3,14 @@
 #![allow(clippy::let_and_return)]
 #![warn(missing_docs)]
 
+mod array_buf;
+mod association;
+mod bignum;
+mod byte_array;
+mod complex;
 mod conversion;
+mod numeric_array;
+mod packed_array;
 mod ptr_cmp;
 
 pub mod symbol;
@@ -17,14 +24,22 @@ mod test_readme {
     #![doc = include_str ! ("../README.md")]
 }
 
-
 use std::fmt;
 use std::mem;
 use std::sync::Arc;
 
-
 #[doc(inline)]
 pub use self::symbol::Symbol;
+
+pub use self::array_buf::{ArrayBuf, ArrayElement, ArrayTag};
+pub use self::association::{Association, RuleEntry};
+pub use self::bignum::{BigInteger, BigReal};
+pub use self::byte_array::ByteArray;
+pub use self::complex::{Complex32, Complex64};
+pub use self::numeric_array::{
+    NumericArray, NumericArrayDataType, NumericArrayElement, NumericArrayRead,
+};
+pub use self::packed_array::{PackedArray, PackedArrayDataType, PackedArrayElement};
 
 #[cfg(feature = "unstable_parse")]
 pub use self::ptr_cmp::ExprRefCmp;
@@ -49,7 +64,7 @@ pub use self::ptr_cmp::ExprRefCmp;
 ///
 /// Internally, `Expr` is an atomically reference-counted [`ExprKind`]. This makes cloning
 /// an expression computationally inexpensive.
-#[derive(Clone, PartialEq, Eq, Hash)]
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Expr {
     inner: Arc<ExprKind>,
 }
@@ -171,9 +186,11 @@ impl Expr {
     //       semantics built in to it.
     pub fn tag(&self) -> Option<Symbol> {
         match *self.inner {
-            ExprKind::Integer(_) | ExprKind::Real(_) | ExprKind::String(_) => None,
             ExprKind::Normal(ref normal) => normal.head.tag(),
             ExprKind::Symbol(ref sym) => Some(sym.clone()),
+            // Atomic variants (no symbolic head): Integer, Real, String, ByteArray,
+            // Association, NumericArray, PackedArray, BigInteger, BigReal.
+            _ => None,
         }
     }
 
@@ -182,10 +199,7 @@ impl Expr {
     pub fn normal_head(&self) -> Option<Expr> {
         match *self.inner {
             ExprKind::Normal(ref normal) => Some(normal.head.clone()),
-            ExprKind::Symbol(_)
-            | ExprKind::Integer(_)
-            | ExprKind::Real(_)
-            | ExprKind::String(_) => None,
+            _ => None,
         }
     }
 
@@ -200,10 +214,7 @@ impl Expr {
     pub fn normal_part(&self, index_0: usize) -> Option<&Expr> {
         match self.kind() {
             ExprKind::Normal(ref normal) => normal.contents.get(index_0),
-            ExprKind::Symbol(_)
-            | ExprKind::Integer(_)
-            | ExprKind::Real(_)
-            | ExprKind::String(_) => None,
+            _ => None,
         }
     }
 
@@ -283,21 +294,33 @@ impl Expr {
 }
 
 /// Wolfram Language expression variants.
+///
+/// Marked `#[non_exhaustive]` so that future variant additions (for new WXF wire types,
+/// etc.) are non-breaking. Downstream `match` expressions over `ExprKind` from outside
+/// this crate must include a `_ => …` arm.
 #[allow(missing_docs)]
-#[derive(Clone, PartialEq, Eq, Hash)]
+#[non_exhaustive]
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum ExprKind<E = Expr> {
     Integer(i64),
     Real(F64),
     String(String),
     Symbol(Symbol),
     Normal(Normal<E>),
+    // WXF-derived variants:
+    ByteArray(ByteArray),
+    Association(Association),
+    NumericArray(NumericArray),
+    PackedArray(PackedArray),
+    BigInteger(BigInteger),
+    BigReal(BigReal),
 }
 
 /// Wolfram Language "normal" expression: `f[...]`.
 ///
 /// A *normal* expression is any expression that consists of a head and zero or
 /// more arguments.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Normal<E = Expr> {
     /// The head of this normal expression.
     head: E,
@@ -311,7 +334,7 @@ pub struct Normal<E = Expr> {
 
 /// Subset of [`ExprKind`] that covers number-type expression values.
 #[allow(missing_docs)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Number {
     // TODO: Rename this to MachineInteger
     Integer(i64),
@@ -417,6 +440,44 @@ impl fmt::Display for ExprKind {
                 write!(f, "{:?}", string)
             },
             ExprKind::Symbol(ref symbol) => fmt::Display::fmt(symbol, f),
+
+            // ----- WXF-derived variants. These produce best-effort InputForm-like
+            // strings; for guaranteed-roundtripping textual output use
+            // wolfram-serializer's WlSerializer. -----
+            ExprKind::ByteArray(ref ba) => {
+                write!(f, "ByteArray[{:?}]", ba.as_slice())
+            },
+            ExprKind::Association(ref assoc) => {
+                write!(f, "<|")?;
+                for (i, entry) in assoc.iter().enumerate() {
+                    if i != 0 {
+                        write!(f, ", ")?;
+                    }
+                    let arrow = if entry.delayed { ":>" } else { "->" };
+                    write!(f, "{} {} {}", entry.key, arrow, entry.value)?;
+                }
+                write!(f, "|>")
+            },
+            ExprKind::NumericArray(ref arr) => {
+                write!(
+                    f,
+                    "NumericArray[<{} elems, {}-byte buffer>, {:?}]",
+                    crate::numeric_array::NumericArrayRead::element_count(arr),
+                    arr.as_bytes().len(),
+                    arr.data_type().name(),
+                )
+            },
+            ExprKind::PackedArray(ref arr) => {
+                write!(
+                    f,
+                    "PackedArray[<{} elems, {}-byte buffer>, {:?}]",
+                    arr.element_count(),
+                    arr.as_bytes().len(),
+                    arr.data_type().name(),
+                )
+            },
+            ExprKind::BigInteger(ref n) => write!(f, "{}", n.as_str()),
+            ExprKind::BigReal(ref r) => write!(f, "{}", r.as_str()),
         }
     }
 }

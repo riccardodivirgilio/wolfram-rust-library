@@ -46,6 +46,10 @@ match expr.kind() {
         e.head(),
         e.elements().len()
     ),
+    // ExprKind is #[non_exhaustive] (variants will be added over time, e.g. for
+    // WXF wire types like NumericArray, Association, BigInteger, ...). Catch-all
+    // arm keeps your code forward-compatible.
+    _ => println!("got some other expression variant"),
 }
 ```
 

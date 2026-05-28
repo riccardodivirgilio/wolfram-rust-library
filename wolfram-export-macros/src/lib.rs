@@ -1,0 +1,153 @@
+//! Procedural macros for `#[export]`, `#[export_native]`, `#[export_wstp]`,
+//! `#[export_wxf]`, and `#[init]`.
+//!
+//! Emitted paths are resolved dynamically at expansion time via
+//! `proc-macro-crate`: if the caller's `Cargo.toml` has `wolfram-export` the
+//! macro emits `::wolfram_export::*`; if it has `wolfram-library-link` (legacy)
+//! it emits `::wolfram_library_link::*`. Both crates expose the same hidden
+//! runtime surface so generated code resolves correctly in both cases.
+
+mod export;
+
+use proc_macro::TokenStream;
+use proc_macro2::TokenStream as TokenStream2;
+
+use quote::quote;
+use syn::{spanned::Spanned, Error, Item};
+
+//======================================
+// #[init]
+//======================================
+
+/// Mark a function as the library's `WolframLibrary_initialize()` entry point.
+///
+/// The annotated function must take no arguments and return `()`. Behind the
+/// scenes the macro emits a `WolframLibrary_initialize` C symbol that calls
+/// `wolfram_export_native::macro_utils::init_with_user_function(lib, user_fn)`.
+#[proc_macro_attribute]
+pub fn init(attr: TokenStream, item: TokenStream) -> TokenStream {
+    match init_(attr.into(), item) {
+        Ok(tokens) => tokens.into(),
+        Err(err) => err.into_compile_error().into(),
+    }
+}
+
+fn init_(attr: TokenStream2, item: TokenStream) -> Result<TokenStream2, Error> {
+    if !attr.is_empty() {
+        return Err(Error::new(attr.span(), "unexpected attribute arguments"));
+    }
+
+    let item: Item = syn::parse(item)?;
+    let func = match item {
+        Item::Fn(func) => func,
+        _ => {
+            return Err(Error::new(
+                attr.span(),
+                "this attribute can only be applied to `fn(..) {..}` items",
+            ))
+        },
+    };
+
+    if let Some(async_) = func.sig.asyncness {
+        return Err(Error::new(
+            async_.span(),
+            "initialization function cannot be `async`",
+        ));
+    }
+    if let Some(lt) = func.sig.generics.lt_token {
+        return Err(Error::new(
+            lt.span(),
+            "initialization function cannot be generic",
+        ));
+    }
+    if !func.sig.inputs.is_empty() {
+        return Err(Error::new(
+            func.sig.inputs.span(),
+            "initialization function should have zero parameters",
+        ));
+    }
+
+    let user_init_fn_name: syn::Ident = func.sig.ident.clone();
+    let p = &self::export::Prefix::resolve().crate_path;
+
+    Ok(quote! {
+        #func
+
+        #[no_mangle]
+        pub unsafe extern "C" fn WolframLibrary_initialize(
+            lib: #p::sys::WolframLibraryData,
+        ) -> ::std::os::raw::c_int {
+            #p::macro_utils::init_with_user_function(
+                lib,
+                #user_init_fn_name
+            )
+        }
+    })
+}
+
+//======================================
+// #[export] — legacy form, dispatches by args
+//======================================
+
+/// Back-compat `#[export]` / `#[export(wstp)]` proc-macro: dispatches by the
+/// `wstp` keyword in `attrs`. Used by the `wolfram_library_link::export`
+/// re-export so existing call sites compile unchanged — emitted code paths
+/// resolve through `::wolfram_library_link::*`.
+#[proc_macro_attribute]
+pub fn export(attrs: TokenStream, item: TokenStream) -> TokenStream {
+    let attrs: syn::AttributeArgs = syn::parse_macro_input!(attrs);
+    let mode = self::export::detect_mode_from_args(&attrs);
+    let attrs = self::export::strip_wstp_arg(attrs);
+    match self::export::export(mode, attrs, item) {
+        Ok(tokens) => tokens.into(),
+        Err(err) => err.into_compile_error().into(),
+    }
+}
+
+//======================================
+// #[export_native]
+//======================================
+
+/// Annotate a function for export via the native (MArgument-based) Wolfram
+/// LibraryLink ABI. Re-exported by `wolfram-export-native` as `export`.
+#[proc_macro_attribute]
+pub fn export_native(attrs: TokenStream, item: TokenStream) -> TokenStream {
+    let attrs: syn::AttributeArgs = syn::parse_macro_input!(attrs);
+    match self::export::export(self::export::Mode::Native, attrs, item) {
+        Ok(tokens) => tokens.into(),
+        Err(err) => err.into_compile_error().into(),
+    }
+}
+
+//======================================
+// #[export_wstp]
+//======================================
+
+/// Annotate a function for export via the WSTP `LinkObject` ABI. Re-exported
+/// by `wolfram-export-wstp` as `export`.
+#[proc_macro_attribute]
+pub fn export_wstp(attrs: TokenStream, item: TokenStream) -> TokenStream {
+    let attrs: syn::AttributeArgs = syn::parse_macro_input!(attrs);
+    match self::export::export(self::export::Mode::Wstp, attrs, item) {
+        Ok(tokens) => tokens.into(),
+        Err(err) => err.into_compile_error().into(),
+    }
+}
+
+//======================================
+// #[export_wxf]
+//======================================
+
+/// Annotate a function for export via the WXF (typed-arg) ABI. The wrapper
+/// reads a `ByteArray` MArgument containing a WXF-encoded payload,
+/// deserializes via `FromWolfram`, calls the user function, serializes the
+/// return value, and writes a `ByteArray` MArgument back. Re-exported by
+/// `wolfram-export-wxf` as `export`.
+#[proc_macro_attribute]
+pub fn export_wxf(attrs: TokenStream, item: TokenStream) -> TokenStream {
+    let attrs: syn::AttributeArgs = syn::parse_macro_input!(attrs);
+    match self::export::export(self::export::Mode::Wxf, attrs, item) {
+        Ok(tokens) => tokens.into(),
+        Err(err) => err.into_compile_error().into(),
+    }
+}

@@ -33,7 +33,6 @@ use std::{
     sync::Arc,
 };
 
-
 /* Notes
 
 Operations on Symbols
@@ -130,6 +129,47 @@ impl Symbol {
         Some(sym_ref.to_symbol())
     }
 
+    /// Construct a [`Symbol`] from a name produced by Wolfram WXF serialization,
+    /// which may be either fully-qualified (``"System`Plus"``) or context-less
+    /// (``"Plus"``) — the kernel deserializing the wire form re-resolves
+    /// context-less names against `$ContextPath`.
+    ///
+    /// Accepts any string that parses as either an absolute [`Symbol`] or a bare
+    /// [`SymbolName`]. Returns `None` for malformed names (e.g. with spaces, leading
+    /// digits, or stray backticks).
+    pub fn try_from_wxf_name(input: &str) -> Option<Self> {
+        if let Some(sym_ref) = SymbolRef::try_new(input) {
+            return Some(sym_ref.to_symbol());
+        }
+        // Bare name (no backtick) — accept if it's a valid SymbolName.
+        if SymbolNameRef::try_new(input).is_some() {
+            // SAFETY: validated by SymbolNameRef::try_new — input is a valid WL
+            // identifier component, just lacks an explicit context.
+            return Some(unsafe { Symbol::unchecked_new(input.to_owned()) });
+        }
+        None
+    }
+
+    /// Same as [`try_from_wxf_name`][Self::try_from_wxf_name], but takes the name
+    /// by value so the underlying `String` can be moved into the [`Symbol`]'s
+    /// `Arc<String>` storage instead of being cloned. On failure, returns the
+    /// original `String` back via `Err` so the caller can include it in error
+    /// messages.
+    ///
+    /// This is the zero-extra-copy path used by the WXF deserializer: bytes from
+    /// the wire flow into a `Vec<u8>`, get consumed into a `String` via
+    /// `String::from_utf8`, and then become the `Arc<String>` inside `Symbol`
+    /// without an intermediate copy.
+    pub fn try_from_wxf_name_owned(input: String) -> Result<Self, String> {
+        if SymbolRef::try_new(&input).is_some()
+            || SymbolNameRef::try_new(&input).is_some()
+        {
+            // SAFETY: validated above by SymbolRef or SymbolNameRef parsing.
+            return Ok(unsafe { Symbol::unchecked_new(input) });
+        }
+        Err(input)
+    }
+
     /// Construct a symbol from `input`.
     ///
     /// # Panics
@@ -156,19 +196,19 @@ impl Symbol {
     }
 
     /// Get a borrowed [`SymbolRef`] from this [`Symbol`].
-    pub fn as_symbol_ref(&self) -> SymbolRef {
+    pub fn as_symbol_ref(&self) -> SymbolRef<'_> {
         let Symbol(arc_string) = self;
 
         SymbolRef(arc_string.as_str())
     }
 
     /// Get the context path part of a symbol as an [`ContextRef`].
-    pub fn context(&self) -> ContextRef {
+    pub fn context(&self) -> ContextRef<'_> {
         self.as_symbol_ref().context()
     }
 
     /// Get the symbol name part of a symbol as a [`SymbolNameRef`].
-    pub fn symbol_name(&self) -> SymbolNameRef {
+    pub fn symbol_name(&self) -> SymbolNameRef<'_> {
         self.as_symbol_ref().symbol_name()
     }
 }
@@ -184,7 +224,7 @@ impl SymbolName {
     }
 
     /// Get a borrowed [`SymbolNameRef`] from this `SymbolName`.
-    pub fn as_symbol_name_ref(&self) -> SymbolNameRef {
+    pub fn as_symbol_name_ref(&self) -> SymbolNameRef<'_> {
         SymbolNameRef(self.as_str())
     }
 }
@@ -264,7 +304,7 @@ impl Context {
     /// assert!(components[1].as_str() == "Sub");
     /// assert!(components[2].as_str() == "Module");
     /// ```
-    pub fn components(&self) -> Vec<SymbolNameRef> {
+    pub fn components(&self) -> Vec<SymbolNameRef<'_>> {
         let Context(string) = self;
 
         let comps: Vec<SymbolNameRef> = string
@@ -281,7 +321,7 @@ impl Context {
     }
 
     /// Get a borrowed [`ContextRef`] from this `Context`.
-    pub fn as_context_ref(&self) -> ContextRef {
+    pub fn as_context_ref(&self) -> ContextRef<'_> {
         ContextRef(self.as_str())
     }
 
@@ -310,7 +350,7 @@ impl RelativeContext {
     /// assert!(components[0].as_str() == "Sub");
     /// assert!(components[1].as_str() == "Module");
     /// ```
-    pub fn components(&self) -> Vec<SymbolNameRef> {
+    pub fn components(&self) -> Vec<SymbolNameRef<'_>> {
         let RelativeContext(string) = self;
 
         let comps: Vec<SymbolNameRef> = string

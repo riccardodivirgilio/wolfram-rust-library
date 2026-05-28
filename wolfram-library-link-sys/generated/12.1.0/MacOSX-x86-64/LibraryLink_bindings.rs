@@ -863,35 +863,8 @@ pub type type_t = ::std::os::raw::c_int;
 pub type errcode_t = ::std::os::raw::c_int;
 pub type UBIT32 = u32;
 pub type UBIT64 = u64;
-#[doc = " Platform specific variants in mcomplex.h"]
-#[repr(C)]
-#[derive(Debug, Copy, Clone)]
-pub struct mcomplex {
-    pub ri: [mreal; 2usize],
-}
-#[test]
-fn bindgen_test_layout_mcomplex() {
-    assert_eq!(
-        ::std::mem::size_of::<mcomplex>(),
-        16usize,
-        concat!("Size of: ", stringify!(mcomplex))
-    );
-    assert_eq!(
-        ::std::mem::align_of::<mcomplex>(),
-        8usize,
-        concat!("Alignment of ", stringify!(mcomplex))
-    );
-    assert_eq!(
-        unsafe { &(*(::std::ptr::null::<mcomplex>())).ri as *const _ as usize },
-        0usize,
-        concat!(
-            "Offset of field: ",
-            stringify!(mcomplex),
-            "::",
-            stringify!(ri)
-        )
-    );
-}
+// `mcomplex` is re-exported from `wolfram-expr::Complex64` via
+// `wolfram_library_link_sys::mcomplex` (see ../src/lib.rs).
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct st_MNumericArray {

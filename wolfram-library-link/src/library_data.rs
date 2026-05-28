@@ -1,3 +1,4 @@
+#[cfg(feature = "wstp")]
 use std::thread;
 
 use once_cell::sync::OnceCell;
@@ -19,6 +20,7 @@ struct Data {
     /// multiple threads at once. This value, used in [`assert_main_thread()`], is used to
     /// ensure that the safe API's provided by `wolfram-library-link` are only called from
     /// the main Kernel thread.
+    #[cfg(feature = "wstp")]
     main_thread_id: thread::ThreadId,
     library_data: WolframLibraryData,
 }
@@ -78,6 +80,7 @@ pub unsafe fn initialize(data: sys::WolframLibraryData) -> Result<(), ()> {
     let library_data = WolframLibraryData::new(data)?;
 
     let _: Result<(), Data> = LIBRARY_DATA.set(Data {
+        #[cfg(feature = "wstp")]
         main_thread_id: thread::current().id(),
         library_data,
     });
@@ -100,6 +103,7 @@ pub fn get_library_data() -> WolframLibraryData {
     .library_data
 }
 
+#[cfg(feature = "wstp")]
 pub(crate) fn is_main_thread() -> bool {
     let data = LIBRARY_DATA
         .get()
@@ -116,6 +120,7 @@ pub(crate) fn is_main_thread() -> bool {
 ///
 /// Use this function to enforce that callbacks into the Kernel happen from the
 /// main thread.
+#[cfg(feature = "wstp")]
 #[track_caller]
 pub(crate) fn assert_main_thread() {
     let loc = std::panic::Location::caller();
@@ -391,51 +396,55 @@ impl WolframLibraryData {
 
         let data: sys::st_WolframLibraryData = unsafe { *data_ptr };
 
-        Ok(unwrap_fields!(data_ptr, data, [
-            UTF8String_disown,
-            MTensor_new,
-            MTensor_free,
-            MTensor_clone,
-            MTensor_shareCount,
-            MTensor_disown,
-            MTensor_disownAll,
-            MTensor_setInteger,
-            MTensor_setReal,
-            MTensor_setComplex,
-            MTensor_setMTensor,
-            MTensor_getInteger,
-            MTensor_getReal,
-            MTensor_getComplex,
-            MTensor_getMTensor,
-            MTensor_getRank,
-            MTensor_getDimensions,
-            MTensor_getType,
-            MTensor_getFlattenedLength,
-            MTensor_getIntegerData,
-            MTensor_getRealData,
-            MTensor_getComplexData,
-            Message,
-            AbortQ,
-            getWSLINK,
-            processWSLINK,
-            evaluateExpression,
-            registerInputStreamMethod,
-            unregisterInputStreamMethod,
-            registerOutputStreamMethod,
-            unregisterOutputStreamMethod,
-            getWSLINKEnvironment,
-            registerLibraryExpressionManager,
-            unregisterLibraryExpressionManager,
-            releaseManagedLibraryExpression,
-            registerLibraryCallbackManager,
-            unregisterLibraryCallbackManager,
-            callLibraryCallbackFunction,
-            releaseLibraryCallbackFunction,
-            validatePath,
-            protectedModeQ,
-            setParallelThreadNumber,
-            restoreParallelThreadNumber,
-            getParallelThreadNumber
-        ]))
+        Ok(unwrap_fields!(
+            data_ptr,
+            data,
+            [
+                UTF8String_disown,
+                MTensor_new,
+                MTensor_free,
+                MTensor_clone,
+                MTensor_shareCount,
+                MTensor_disown,
+                MTensor_disownAll,
+                MTensor_setInteger,
+                MTensor_setReal,
+                MTensor_setComplex,
+                MTensor_setMTensor,
+                MTensor_getInteger,
+                MTensor_getReal,
+                MTensor_getComplex,
+                MTensor_getMTensor,
+                MTensor_getRank,
+                MTensor_getDimensions,
+                MTensor_getType,
+                MTensor_getFlattenedLength,
+                MTensor_getIntegerData,
+                MTensor_getRealData,
+                MTensor_getComplexData,
+                Message,
+                AbortQ,
+                getWSLINK,
+                processWSLINK,
+                evaluateExpression,
+                registerInputStreamMethod,
+                unregisterInputStreamMethod,
+                registerOutputStreamMethod,
+                unregisterOutputStreamMethod,
+                getWSLINKEnvironment,
+                registerLibraryExpressionManager,
+                unregisterLibraryExpressionManager,
+                releaseManagedLibraryExpression,
+                registerLibraryCallbackManager,
+                unregisterLibraryCallbackManager,
+                callLibraryCallbackFunction,
+                releaseLibraryCallbackFunction,
+                validatePath,
+                protectedModeQ,
+                setParallelThreadNumber,
+                restoreParallelThreadNumber,
+                getParallelThreadNumber
+            ]
+        ))
     }
 }

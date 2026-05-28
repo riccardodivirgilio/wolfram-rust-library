@@ -139,7 +139,6 @@
 
 #![warn(missing_docs)]
 
-
 mod env;
 mod error;
 mod link_server;
@@ -159,13 +158,12 @@ mod test_readme {
     #![doc = include_str!("../README.md")]
 }
 
-
 use std::convert::TryFrom;
 use std::ffi::{c_char, CStr, CString};
 use std::fmt::{self, Display};
 use std::net;
 
-use wolfram_expr::{Expr, ExprKind, Number, Symbol};
+use wolfram_expr::{BigInteger, BigReal, Expr, ExprKind, Number, Symbol};
 use wstp_sys::{WSErrorMessage, WSReady, WSReleaseErrorMessage, WSLINK};
 
 //-----------------------------------
@@ -188,7 +186,6 @@ pub use crate::{
 
 // TODO: Make this function public from `wstp`?
 pub(crate) use env::with_raw_stdenv;
-
 
 //======================================
 // Source
@@ -864,24 +861,51 @@ impl Link {
         &mut self,
         mut resolver: &mut dyn FnMut(&str) -> Option<Symbol>,
     ) -> Result<Expr, Error> {
-        let value = self.get_token()?;
+        use crate::get::TokenType;
 
-        let expr: Expr = match value {
-            Token::Integer(value) => Expr::from(value),
-            Token::Real(value) => {
-                let real: wolfram_expr::F64 = match wolfram_expr::F64::new(value) {
-                    Ok(real) => real,
-                    // TODO: Try passing a NaN value or a BigReal value through WSLINK.
-                    Err(_is_nan) => {
-                        return Err(Error::custom(format!(
-                        "NaN value passed on WSLINK cannot be used to construct an Expr"
-                    )))
+        let token_type = self.get_type()?;
+
+        let expr: Expr = match token_type {
+            TokenType::Integer => {
+                // Use WSTP's own integer parser (WSGetInteger64) for the
+                // common case. It fails on values that don't fit i64
+                // (`2^200`, etc.); recover by clearing the error and
+                // re-reading the token as its decimal-digit string via
+                // WSGetNumberAsString, then wrap as BigInteger.
+                match self.get_i64() {
+                    Ok(v) => Expr::from(v),
+                    Err(_) => {
+                        self.clear_error();
+                        let digits = self.get_number_as_string()?;
+                        Expr::new(ExprKind::BigInteger(BigInteger::new(digits)))
                     },
-                };
-                Expr::number(Number::Real(real))
+                }
             },
-            Token::String(value) => Expr::string(value.as_str()),
-            Token::Symbol(value) => {
+            TokenType::Real => {
+                // Read as the WL textual representation. A WL-side `N[Pi, 50]`
+                // arrives with a precision marker (backtick) in its string
+                // form — preserve it as ExprKind::BigReal so precision isn't
+                // silently lost. Plain reals parse via f64.
+                let s = self.get_number_as_string()?;
+                if s.contains('`') {
+                    Expr::new(ExprKind::BigReal(BigReal::new(s)))
+                } else {
+                    match s.parse::<f64>() {
+                        Ok(v) => {
+                            let real = wolfram_expr::F64::new(v).map_err(|_| {
+                                Error::custom(format!(
+                                    "NaN value passed on WSLINK cannot be used to construct an Expr"
+                                ))
+                            })?;
+                            Expr::number(Number::Real(real))
+                        },
+                        Err(_) => Expr::new(ExprKind::BigReal(BigReal::new(s))),
+                    }
+                }
+            },
+            TokenType::String => Expr::string(self.get_string_ref()?.as_str()),
+            TokenType::Symbol => {
+                let value = self.get_symbol_ref()?;
                 let symbol_str: &str = value.as_str();
 
                 // If `symbol_str` is not an absolute symbol, use the provided `resolver`
@@ -900,9 +924,8 @@ impl Link {
 
                 Expr::symbol(symbol)
             },
-            Token::Function { length: arg_count } => {
-                drop(value);
-
+            TokenType::Function => {
+                let arg_count = self.get_arg_count()?;
                 let head = self.get_expr_with_resolver(&mut resolver)?;
 
                 let mut contents = Vec::with_capacity(arg_count);
@@ -941,6 +964,47 @@ impl Link {
             },
             ExprKind::Real(real) => {
                 self.put_f64(**real)?;
+            },
+            ExprKind::Association(assoc) => {
+                self.put_raw_type(i32::from(sys::WSTKFUNC))?;
+                self.put_arg_count(assoc.len())?;
+                self.put_symbol("System`Association")?;
+                for entry in assoc {
+                    let head = if entry.delayed {
+                        "System`RuleDelayed"
+                    } else {
+                        "System`Rule"
+                    };
+                    self.put_raw_type(i32::from(sys::WSTKFUNC))?;
+                    self.put_arg_count(2)?;
+                    self.put_symbol(head)?;
+                    self.put_expr(&entry.key)?;
+                    self.put_expr(&entry.value)?;
+                }
+            },
+            ExprKind::ByteArray(ba) => {
+                let bytes: &[u8] = ba.as_slice();
+                self.put_raw_type(i32::from(sys::WSTKFUNC))?;
+                self.put_arg_count(1)?;
+                self.put_symbol("System`ByteArray")?;
+                self.put_u8_array(bytes, &[bytes.len()])?;
+            },
+            ExprKind::BigInteger(_) | ExprKind::BigReal(_) | ExprKind::PackedArray(_) | ExprKind::NumericArray(_) => {
+                let wxf = wolfram_serializer::serialize(expr, wolfram_serializer::Format::Wxf)
+                    .map_err(|e| Error::custom(format!("put_expr: WXF serialization failed: {e}")))?;
+                self.put_raw_type(i32::from(sys::WSTKFUNC))?;
+                self.put_arg_count(1)?;
+                self.put_symbol("System`BinaryDeserialize")?;
+                self.put_raw_type(i32::from(sys::WSTKFUNC))?;
+                self.put_arg_count(1)?;
+                self.put_symbol("System`ByteArray")?;
+                self.put_u8_array(&wxf, &[wxf.len()])?;
+            },
+            other => {
+                return Err(Error::custom(format!(
+                    "put_expr: ExprKind variant {:?} not yet supported",
+                    other
+                )));
             },
         }
 

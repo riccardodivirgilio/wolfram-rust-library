@@ -152,7 +152,7 @@ impl Link {
     /// assert!(matches!(link.get_token().unwrap(), Token::String(s) if s.as_str() == "second"));
     /// assert!(matches!(link.get_token().unwrap(), Token::Symbol(s) if s.as_str() == "Global`foo"));
     /// ```
-    pub fn get_token(&mut self) -> Result<Token, Error> {
+    pub fn get_token(&mut self) -> Result<Token<'_>, Error> {
         let token = match self.get_type()? {
             TokenType::Integer => Token::Integer(self.get_i64()?),
             TokenType::Real => Token::Real(self.get_f64()?),
@@ -431,6 +431,21 @@ impl Link {
     // Numerics
     //==================================
 
+    /// Read any number token (integer or real, arbitrary precision) as its
+    /// decimal string representation. Used to recover `BigInteger` / `BigReal`
+    /// values whose precision exceeds `i64` / `f64`.
+    ///
+    /// *WSTP C API Documentation:* [`WSGetNumberAsString()`](https://reference.wolfram.com/language/ref/c/WSGetNumberAsString.html)
+    pub fn get_number_as_string(&mut self) -> Result<String, Error> {
+        let mut c_string: *const c_char = std::ptr::null();
+        if unsafe { sys::WSGetNumberAsString(self.raw_link, &mut c_string) } == 0 {
+            return Err(self.error_or_unknown());
+        }
+        let owned = unsafe { CStr::from_ptr(c_string).to_string_lossy().into_owned() };
+        unsafe { sys::WSReleaseString(self.raw_link, c_string) };
+        Ok(owned)
+    }
+
     /// *WSTP C API Documentation:* [`WSGetInteger64()`](https://reference.wolfram.com/language/ref/c/WSGetInteger64.html)
     pub fn get_i64(&mut self) -> Result<i64, Error> {
         let mut int = 0;
@@ -507,22 +522,22 @@ impl Link {
     /// ```
     ///
     /// *WSTP C API Documentation:* [`WSGetInteger64Array()`](https://reference.wolfram.com/language/ref/c/WSGetInteger64Array.html)
-    pub fn get_i64_array(&mut self) -> Result<Array<i64>, Error> {
+    pub fn get_i64_array(&mut self) -> Result<Array<'_, i64>, Error> {
         unsafe { self.get_array(sys::WSGetInteger64Array, sys::WSReleaseInteger64Array) }
     }
 
     /// *WSTP C API Documentation:* [`WSGetInteger32Array()`](https://reference.wolfram.com/language/ref/c/WSGetInteger32Array.html)
-    pub fn get_i32_array(&mut self) -> Result<Array<i32>, Error> {
+    pub fn get_i32_array(&mut self) -> Result<Array<'_, i32>, Error> {
         unsafe { self.get_array(sys::WSGetInteger32Array, sys::WSReleaseInteger32Array) }
     }
 
     /// *WSTP C API Documentation:* [`WSGetInteger16Array()`](https://reference.wolfram.com/language/ref/c/WSGetInteger16Array.html)
-    pub fn get_i16_array(&mut self) -> Result<Array<i16>, Error> {
+    pub fn get_i16_array(&mut self) -> Result<Array<'_, i16>, Error> {
         unsafe { self.get_array(sys::WSGetInteger16Array, sys::WSReleaseInteger16Array) }
     }
 
     /// *WSTP C API Documentation:* [`WSGetInteger8Array()`](https://reference.wolfram.com/language/ref/c/WSGetInteger8Array.html)
-    pub fn get_u8_array(&mut self) -> Result<Array<u8>, Error> {
+    pub fn get_u8_array(&mut self) -> Result<Array<'_, u8>, Error> {
         unsafe { self.get_array(sys::WSGetInteger8Array, sys::WSReleaseInteger8Array) }
     }
 
@@ -549,12 +564,12 @@ impl Link {
     /// ```
     ///
     /// *WSTP C API Documentation:* [`WSGetReal64Array()`](https://reference.wolfram.com/language/ref/c/WSGetReal64Array.html)
-    pub fn get_f64_array(&mut self) -> Result<Array<f64>, Error> {
+    pub fn get_f64_array(&mut self) -> Result<Array<'_, f64>, Error> {
         unsafe { self.get_array(sys::WSGetReal64Array, sys::WSReleaseReal64Array) }
     }
 
     /// *WSTP C API Documentation:* [`WSGetReal32Array()`](https://reference.wolfram.com/language/ref/c/WSGetReal32Array.html)
-    pub fn get_f32_array(&mut self) -> Result<Array<f32>, Error> {
+    pub fn get_f32_array(&mut self) -> Result<Array<'_, f32>, Error> {
         unsafe { self.get_array(sys::WSGetReal32Array, sys::WSReleaseReal32Array) }
     }
 
@@ -575,7 +590,7 @@ impl Link {
             *mut *mut c_char,
             i32,
         ),
-    ) -> Result<Array<T>, Error> {
+    ) -> Result<Array<'_, T>, Error> {
         let Link { raw_link } = *self;
 
         let mut data_ptr: *mut T = std::ptr::null_mut();
@@ -783,7 +798,6 @@ unsafe impl LinkStrType for Utf32Str {
         }
     }
 }
-
 
 /// Reference to a multidimensional rectangular array borrowed from a [`Link`].
 ///

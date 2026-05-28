@@ -5,7 +5,6 @@ use std::{
 
 use crate::{Expr, ExprKind};
 
-
 /// [`Expr`] wrapper that compares by reference instead of by value.
 ///
 /// The standard [`Expr`] type uses *value* semantics for comparision: two [`Expr`]
@@ -34,6 +33,7 @@ use crate::{Expr, ExprKind};
 /// `PartialEq` impl for [`ExprKind`] (and whose hash values are therefore the
 /// same) can be differentiated.
 #[derive(Debug)]
+#[allow(dead_code)] // Field is read via destructuring in the Hash/PartialEq impls.
 pub struct ExprRefCmp(pub Expr);
 
 impl Hash for ExprRefCmp {

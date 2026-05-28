@@ -1,0 +1,23 @@
+[package]
+name = "wolfram-export-macros"
+version = "0.5.0"
+license = "MIT OR Apache-2.0"
+edition = "2021"
+repository = "https://github.com/WolframResearch/wolfram-rust-library"
+description = "Procedural macros for #[export_native], #[export_wstp], #[export_wxf]"
+
+[lib]
+proc-macro = true
+
+[dependencies]
+proc-macro2 = "1.0.36"
+syn = { version = "1.0.85", features = ["full"] }
+quote = "1.0.14"
+# At macro-expansion time, look up which crate the *user* has in their Cargo.toml
+# (`wolfram-export` vs the legacy `wolfram-library-link`) so the emitted code
+# resolves through the right host crate path.
+proc-macro-crate = "3"
+
+[features]
+default = []
+automate-function-loading-boilerplate = []
