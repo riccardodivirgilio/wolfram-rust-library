@@ -27,10 +27,10 @@ pub fn cmd_test(args: TestArgs) -> Result<()> {
         .unwrap_or_else(|| PathBuf::from("wl-test"));
 
     let infos = dylibs.iter()
-        .map(|d| collect_dylib_info(d))
+        .map(|p| collect_dylib_info(p))
         .collect::<Result<Vec<_>>>()?;
 
-    let lib_dir = generate_package(&infos, host_system_id, &out_dir, true, true)?;
+    let lib_dir = generate_package(&infos, host_system_id, &out_dir, true, true, None, None)?;
 
     run_wl_script(include_str!("../commands/test.wl"), args.files, vec![lib_dir], args.out)
 }
