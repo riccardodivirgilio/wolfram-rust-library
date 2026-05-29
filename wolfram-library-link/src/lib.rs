@@ -264,8 +264,8 @@ pub use self::{
     image::{ColorSpace, Image, ImageData, ImageType, Pixel, UninitImage},
     library_data::{get_library_data, initialize, WolframLibraryData},
     numeric_array::{
-        NumericArray, NumericArrayConvertMethod, NumericArrayDataType, NumericArrayKind,
-        NumericArrayType, UninitNumericArray,
+        NumericArray, NumericArrayConvertMethod, NumericArrayExpressionEnum, NumericArrayKind,
+        NumericNumericArrayEnum, UninitNumericArray,
     },
 };
 
@@ -277,9 +277,8 @@ pub use self::args::WstpFunction;
 // them from this crate's namespace without an extra `use wolfram_expr` line.
 pub use wolfram_expr::NumericArray as OwnedNumericArray;
 pub use wolfram_expr::{
-    Association, ByteArray, NumericArrayDataType as ExprNumericArrayDataType,
-    NumericArrayElement, NumericArrayRead, PackedArray, PackedArrayDataType,
-    PackedArrayElement,
+    NumericArrayEnum, Association, ByteArray, NumericArrayRead,
+    PackedArray, PackedArrayEnum,
 };
 pub use wolfram_expr::{BigInteger, BigReal};
 
@@ -462,7 +461,7 @@ pub use wolfram_export_macros::init;
 /// ```wolfram
 /// LibraryFunctionLoad[
 ///     "...", "total_i64",
-///     {LibraryDataType[NumericArray, "Integer64"]}
+///     {LibraryExpressionEnum[NumericArray, "Integer64"]}
 ///     Integer
 /// ]
 /// ```
@@ -495,7 +494,7 @@ pub use wolfram_export_macros::init;
 // LibraryFunctionLoad[
 //     "...", "total_i64",
 //     {
-//         {LibraryDataType[NumericArray, "Integer64"], "Constant"}
+//         {LibraryExpressionEnum[NumericArray, "Integer64"], "Constant"}
 //     },
 //     Integer
 // ]
@@ -533,10 +532,10 @@ pub use wolfram_export_macros::init;
 /// [`mcomplex`][crate::sys::mcomplex] | `Complex`
 /// [`String`]                         | `String`
 /// [`CString`][std::ffi::CString]     | `String`
-/// [`&NumericArray`][NumericArray]    | a. `LibraryDataType[NumericArray]` <br/> b. `{LibraryDataType[NumericArray], "Constant"}`[^1]
-/// [`NumericArray`]                   | a. `{LibraryDataType[NumericArray], "Manual"}`[^1] <br/> b. `{LibraryDataType[NumericArray], "Shared"}`[^1]
-/// [`&NumericArray<T>`][NumericArray] | a. `LibraryDataType[NumericArray, `[`"..."`][ref/NumericArray]`]`[^1] <br/> b. `{LibraryDataType[NumericArray, "..."], "Constant"}`[^1]
-/// [`NumericArray<T>`]                | a. `{LibraryDataType[NumericArray, "..."], "Manual"}`[^1] <br/> b. `{LibraryDataType[NumericArray, "..."], "Shared"}`[^1]
+/// [`&NumericArray`][NumericArray]    | a. `LibraryExpressionEnum[NumericArray]` <br/> b. `{LibraryExpressionEnum[NumericArray], "Constant"}`[^1]
+/// [`NumericArray`]                   | a. `{LibraryExpressionEnum[NumericArray], "Manual"}`[^1] <br/> b. `{LibraryExpressionEnum[NumericArray], "Shared"}`[^1]
+/// [`&NumericArray<T>`][NumericArray] | a. `LibraryExpressionEnum[NumericArray, `[`"..."`][ref/NumericArray]`]`[^1] <br/> b. `{LibraryExpressionEnum[NumericArray, "..."], "Constant"}`[^1]
+/// [`NumericArray<T>`]                | a. `{LibraryExpressionEnum[NumericArray, "..."], "Manual"}`[^1] <br/> b. `{LibraryExpressionEnum[NumericArray, "..."], "Shared"}`[^1]
 /// [`DataStore`]                      | `"DataStore"`
 ///
 /// # Return types
@@ -558,8 +557,8 @@ pub use wolfram_export_macros::init;
 /// [`f32`]                            | `Real`
 /// [`mcomplex`][crate::sys::mcomplex] | `Complex`
 /// [`String`]                         | `String`
-/// [`NumericArray`]                   | `LibraryDataType[NumericArray]`
-/// [`NumericArray<T>`]                | `LibraryDataType[NumericArray, `[`"..."`][ref/NumericArray][^1]`]`
+/// [`NumericArray`]                   | `LibraryExpressionEnum[NumericArray]`
+/// [`NumericArray<T>`]                | `LibraryExpressionEnum[NumericArray, `[`"..."`][ref/NumericArray][^1]`]`
 /// [`DataStore`]                      | `"DataStore"`
 ///
 /// [^1]: The Details and Options section of the Wolfram Language
@@ -924,7 +923,7 @@ fn bool_from_mbool(boole: sys::mbool) -> bool {
 ///     "flat_total_i64" -> LibraryFunction[
 ///         "example_library",
 ///         "flat_total_i64",
-///         {{LibraryDataType[NumericArray, "Integer64"], "Constant"}},
+///         {{LibraryExpressionEnum[NumericArray, "Integer64"], "Constant"}},
 ///         Integer
 ///     ],
 ///     "time_since_epoch" -> LibraryFunction["example_library", "time_since_epoch", LinkObject]

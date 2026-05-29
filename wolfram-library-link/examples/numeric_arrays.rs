@@ -14,14 +14,14 @@ use wolfram_library_link::{self as wll, NumericArray, NumericArrayKind};
 fn sum_int_numeric_array(na: &NumericArray) -> i64 {
     #[rustfmt::skip]
     let sum: i64 = match na.kind() {
-        NumericArrayKind::Integer8(na) => na.as_slice().into_iter().copied().map(i64::from).sum(),
-        NumericArrayKind::Integer16(na) => na.as_slice().into_iter().copied().map(i64::from).sum(),
-        NumericArrayKind::Integer32(na) => na.as_slice().into_iter().copied().map(i64::from).sum(),
-        NumericArrayKind::Integer64(na) => na.as_slice().into_iter().sum(),
-        NumericArrayKind::UnsignedInteger8(na) => na.as_slice().into_iter().copied().map(i64::from).sum(),
-        NumericArrayKind::UnsignedInteger16(na) => na.as_slice().into_iter().copied().map(i64::from).sum(),
-        NumericArrayKind::UnsignedInteger32(na) => na.as_slice().into_iter().copied().map(i64::from).sum(),
-        NumericArrayKind::UnsignedInteger64(na) => {
+        NumericArrayKind::Bit8(na) => na.as_slice().into_iter().copied().map(i64::from).sum(),
+        NumericArrayKind::Bit16(na) => na.as_slice().into_iter().copied().map(i64::from).sum(),
+        NumericArrayKind::Bit32(na) => na.as_slice().into_iter().copied().map(i64::from).sum(),
+        NumericArrayKind::Bit64(na) => na.as_slice().into_iter().sum(),
+        NumericArrayKind::UBit8(na) => na.as_slice().into_iter().copied().map(i64::from).sum(),
+        NumericArrayKind::UBit16(na) => na.as_slice().into_iter().copied().map(i64::from).sum(),
+        NumericArrayKind::UBit32(na) => na.as_slice().into_iter().copied().map(i64::from).sum(),
+        NumericArrayKind::UBit64(na) => {
             match i64::try_from(na.as_slice().into_iter().sum::<u64>()) {
                 Ok(sum) => sum,
                 Err(_) => panic!("NumericArray UnsignedInteger64 sum overflows i64"),

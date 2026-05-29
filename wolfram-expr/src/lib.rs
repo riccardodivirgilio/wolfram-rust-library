@@ -12,6 +12,7 @@ mod conversion;
 mod numeric_array;
 mod packed_array;
 mod ptr_cmp;
+pub mod wxf;
 
 pub mod symbol;
 
@@ -31,15 +32,14 @@ use std::sync::Arc;
 #[doc(inline)]
 pub use self::symbol::Symbol;
 
-pub use self::array_buf::{ArrayBuf, ArrayElement, ArrayTag};
+pub use self::array_buf::{ArrayBuf, ArrayElement, NumericArrayRead};
 pub use self::association::{Association, RuleEntry};
 pub use self::bignum::{BigInteger, BigReal};
 pub use self::byte_array::ByteArray;
 pub use self::complex::{Complex32, Complex64};
-pub use self::numeric_array::{
-    NumericArray, NumericArrayDataType, NumericArrayElement, NumericArrayRead,
-};
-pub use self::packed_array::{PackedArray, PackedArrayDataType, PackedArrayElement};
+pub use self::wxf::{ExpressionEnum, HeaderEnum, NumericArrayEnum, PackedArrayEnum};
+pub use self::numeric_array::NumericArray;
+pub use self::packed_array::PackedArray;
 
 #[cfg(feature = "unstable_parse")]
 pub use self::ptr_cmp::ExprRefCmp;
@@ -461,8 +461,8 @@ impl fmt::Display for ExprKind {
             ExprKind::NumericArray(ref arr) => {
                 write!(
                     f,
-                    "NumericArray[<{} elems, {}-byte buffer>, {:?}]",
-                    crate::numeric_array::NumericArrayRead::element_count(arr),
+                    "NumericArray[<{} elems, {}-byte buffer>, {}]",
+                    crate::array_buf::NumericArrayRead::element_count(arr),
                     arr.as_bytes().len(),
                     arr.data_type().name(),
                 )
@@ -470,7 +470,7 @@ impl fmt::Display for ExprKind {
             ExprKind::PackedArray(ref arr) => {
                 write!(
                     f,
-                    "PackedArray[<{} elems, {}-byte buffer>, {:?}]",
+                    "PackedArray[<{} elems, {}-byte buffer>, {}]",
                     arr.element_count(),
                     arr.as_bytes().len(),
                     arr.data_type().name(),
